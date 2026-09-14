@@ -8,7 +8,7 @@ This repository maintains `arii.yaml`, an OpenAPI 3.0.3 specification for the Ar
 
 The specification is authored contract-first and maintained by hand. It is not generated from the API implementation. Operation, parameter, and schema descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, and patient data entry.
 
-The specification currently defines **29 operations** across **26 paths** and **22 component schemas**, organised into the following domains:
+The specification currently defines **30 operations** across **27 paths** and **23 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
