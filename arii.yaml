@@ -1,24 +1,59 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "1.0.0"
+  version: "2.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
-    medications, journaling, meals, and symptoms.
+    medications and supplements, journaling, meals, and symptoms.
+
+    Every operation, parameter and behaviour described here is verified against merged
+    `arii-api` `main` (398859a13, 18 September 2026). Nothing is exposed that is not merged,
+    and where the API's own XML docs disagree with its behaviour the behaviour is what is
+    documented here.
 
     ## LLM Agent Usage Guide
 
     **Primary workflows:**
-    - Current numbers / lipids / on-target: `get_user_marker_types_with_data`, filter by
-      category (e.g. "Lipids & Cardiovascular Risk"), then `get_marker_summary` with
-      `specificMarkers` (goal is inline on each marker). Never fetch sample payloads.
+    - Any question about a patient's markers: `get_user_marker_types_with_data` first, to
+      see what this person actually has. Then whichever read the question calls for, scoped
+      to those ids with `specificMarkers` — `get_marker_summary_compact` for current values,
+      `get_marker_averages` for a trend, `get_marker_samples` for individual readings,
+      `get_observation_samples` for whether a result is normal for this person. Never fetch
+      observation sample payloads for values.
+    - "Is she hitting her target?" is the one current-value question the compact read cannot
+      answer: it carries no goal. Use `get_marker_summary`, scoped with `specificMarkers` to
+      the markers the question names, where `goal` is inline on each row. Do not look for a
+      separate goal tool.
+    - An open question with no named marker — "how am I doing", "give me a snapshot",
+      "what do you have for me" — goes straight to `get_marker_summary_compact` with
+      `select=Abnormal`. It answers over the whole window in a handful of rows. Do not
+      call `get_marker_summary` for these: on a populated chart it returns the entire
+      catalogue in one response and the reply comes back empty (AIP-297).
+    - `bulk_search_marker_types` when nothing in that list matches the wording, to check
+      whether the catalog knows the metric at all. It reads the global catalog, so a hit
+      there never means this patient has it.
+    - "Is this normal for this person?": for one named result, `get_observation_samples`,
+      which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
+      the sample's unit. Across the whole chart, `get_marker_summary_compact` with
+      `select=Abnormal`, whose rows carry `rangeStatus` and `outOfRange`.
+      `get_marker_summary` returns no reference range at all.
     - Lab draw metadata (when was the last panel, observation id): `list_observations`
-      with `Type=Lab` and **`IncludeHealthKitSamples=false` only**
-    - Device metrics (steps, HR, sleep): Marker tools after `bulk_search_marker_types`
-    - Clinical notes: `list_notes` / `get_note` (providers) or `get_shared_notes` (patients)
-    - Logging: `create_meal`, `create_journal`, `create_user_symptom_details`,
-      `create_medication`, `create_observation` (activities and workouts go here)
+      with `Type=Lab` and **`IncludeHealthKitSamples=false` only**.
+    - Device metrics (steps, HR, sleep): marker tools, scoped to the ids from
+      `get_user_marker_types_with_data`.
+    - Medications and supplements: `get_active_medications_and_supplements` for what
+      someone takes now, `get_all_medications_and_supplements` for history,
+      `get_dose_history` for dose-by-dose adherence, `get_adherence_stats` for the
+      summary figure.
+    - Clinical notes: `list_notes` / `get_note` (providers) or `get_shared_notes`
+      (patients).
+    - Profile facts (date of birth, sex, timezone, allergies): `get_user_preferences`.
+      They are not on `get_user`.
+
+    **This surface is read-only.** No `create_*` tool is exposed. The app writes the
+    record when the person approves a card in the client; an agent writing directly
+    creates a row nobody approved, and the approval then saves a duplicate.
 
     **CRITICAL - User ID kinds (do not confuse these):**
     - **Arii user ID** (`UserDto.id` / `CurrentUserIdentityDto.id`): the internal Arii GUID
@@ -30,68 +65,75 @@ info:
     - **Keycloak / IdP `sub`**: never an Arii `userId`.
     - **Active group ID** (`activeGroupId`): organization/practice GUID, not a user ID.
 
+    **`get_current_user` returns the person asking, never the person whose data this is.**
+    Do not use its `id` as the `userId` of a patient data read: on a clinician's turn that
+    reads the clinician's own empty record, and the answer comes out as the patient having
+    no data. Whose data to read comes from the execution context. Call `get_current_user`
+    when the question is about the requester themselves, or to check whether the session has
+    a linked Arii account at all. Under Bearer/passthrough no read in this catalog needs
+    `requestingUserId`; on the legacy `X-API-Key` path it is still the caller's identity and
+    omitting it is refused.
+
     **Common workflows:**
-    - "Resolve my Arii user ID (Bearer/passthrough)" -> call **`get_current_user`**
-      (`GET /api/v1/Users/me`) once and reuse the returned `id` as your Arii user ID.
-      Do not guess from Airia profile ID / Keycloak `sub`. Optional: call `get_user`
-      with that `id` to confirm `id` <-> `airiaProfileId`. `get_current_user` and
-      `get_user` have no date of birth, sex, height, weight, or allergies; for those
-      call **`get_user_preferences`** with the Arii user ID.
-    - "How old is she / height / weight / allergies / dietary restrictions / timezone" ->
-      `get_current_user` (self) or patient Arii ID -> **`get_user_preferences`**
-      (send `X-Access-Context: group` when a provider reads a patient).
     - "Provider reading a patient" -> path `userId` = patient Arii ID from execution
-      context; `requestingUserId` = **`get_current_user`.id**
-    - "What are her current numbers / is she hitting her target?" ->
-      `get_user_marker_types_with_data` (or `bulk_search_marker_types` when you already
-      know metric names) then **`get_marker_summary`** with `specificMarkers`. The goal
-      is already on each marker. Do not look for a separate goal tool.
+      context. Nothing else is needed: the session identifies the caller, `requestingUserId`
+      is discarded, and no header is available to a tool call.
     - "How are my lipids / cholesterol / LDL / HDL / triglycerides?" ->
-      `get_current_user` -> **`get_user_marker_types_with_data`** -> keep rows where
-      `category` is **"Lipids & Cardiovascular Risk"** and/or name/aliases match the
-      question (advanced panels: NMR, ratios, ApoB, Lp(a) may have blank category) ->
-      **`get_marker_summary`** with those marker type ids in `specificMarkers`. Do **not**
-      call `list_observations` or `get_observation` with samples enabled.
+      `get_user_marker_types_with_data` -> keep the rows whose name or aliases match the
+      lipid panel -> `get_marker_summary_compact` with those ids in `specificMarkers`. Do
+      **not** call `list_observations` or `get_observation` with samples enabled.
+      To work by category instead of by name, call `get_marker_summary_compact` unfiltered
+      and read `categoryFacets` for the `categoryId` — that is the only category filter in
+      this catalog that keys off a name you can read. The `category` on
+      `get_user_marker_types_with_data` and on `list_marker_types` is a numeric id.
     - "When was my last lab draw / which observation id?" -> `list_observations`
       (`Type=Lab`, **`IncludeHealthKitSamples=false`**). Sort by `date` descending.
-      If you send `StartDate`/`EndDate`, they must end in `Z` or the API returns 400.
-    - "Device / daily metrics (steps, HR, sleep)" -> Marker tools
-      (`get_user_marker_types_with_data`, `get_marker_summary`, `get_marker_samples`,
-      `get_marker_averages`).
-    - "Log an activity or workout" -> `create_observation` with `type=Activity`.
+      Bound it with `RecordStartDate`/`RecordEndDate` as `yyyy-MM-dd`; either can be sent
+      alone. `StartDate`/`EndDate` on this tool are deprecated instants that must carry a
+      trailing `Z` or the API returns 400 — prefer the record-date pair.
+    - "Device / daily metrics (steps, HR, sleep)" -> marker tools
+      (`get_marker_summary`, `get_marker_samples`, `get_marker_averages`).
 
-    **Authentication:** Supports JWT Bearer tokens (passthrough from Airia Platform) and
-    API Key via `X-API-Key`.
+    **Authentication:** JWT Bearer tokens (passthrough from Airia Platform) and API Key
+    via `X-API-Key`.
     - Under **Bearer / passthrough**, you MUST pass Arii user IDs. There is no automatic
-      translation from Airia profile ID to Arii user ID. **Always call `get_current_user`
-      first** to obtain the caller's Arii `id` (requires a linked Arii user for the JWT).
+      translation from Airia profile ID to Arii user ID. No read here needs
+      `requestingUserId`, so `get_current_user` is for questions about the requester
+      themselves, not a step before a patient read.
+    - Under **API Key**, `requestingUserId` is the only identity the API has, and the reads
+      that take it refuse the call without one — 403 on the marker reads, 400 on
+      `get_user_symptom_details`. The "omit it" guidance on those tools is for
+      Bearer/passthrough.
     - Airia profile ID to Arii user ID auto-translation exists **only for API Key auth**,
-      and some newer endpoints do not support API Key at all. Prefer explicit Arii user
-      IDs (from `get_current_user` under Bearer) so the same tool calls work for both.
+      and some newer endpoints do not support API Key at all.
 
-    **Common patterns:**
-    - Most user-scoped endpoints require an Arii `userId` (GUID)
-    - Observation `StartDate`/`EndDate` must be UTC RFC3339 **with `Z`**
-      (e.g., `2024-01-15T00:00:00Z`). Naive datetimes without `Z` cause HTTP 400.
-      Marker summary, averages, and samples use local calendar dates `YYYY-MM-DD`.
-    - Cross-user access requires family, sharing, or group permissions. Behavior is
-      endpoint-specific. **Provider reading a patient:** DataDictionary and Marker
-      tools require `X-Access-Context: group` (plus `requestingUserId` where required).
-      Cross-user Observation reads have no reliable mechanism exposed by these tools;
-      a 403 there is an access problem, not missing data. Prefer the Marker path for
-      current lab values, and do not fall back to Observation sample payloads when
-      Marker tools return 403.
-    - The `X-Access-Context` header (value `"group"`) enables group-based access on
-      DataDictionary and Marker endpoints; it is not sufficient alone for every
-      cross-user Observation query
+    **Cross-user access.** Cross-user reads depend on family, sharing, or group
+    permissions, and the API resolves them from who is asking. **No header is available
+    to a tool call** — a tool call is a set of arguments matching a declared schema, and
+    no operation here declares a header, so there is nothing an agent can send to widen
+    its access. A clinic-only link may therefore be refused. Refusal shapes are currently
+    inconsistent across endpoints (403, 400, and prose that reads like emptiness); a
+    refusal is an access problem, never evidence that the person has no data. Tracked as
+    AIP-233.
 
-    **Pagination:** 0-based `pageNumber` and `pageSize` (typically 1-100).
-    `list_observations` `PageSize` defaults to 10 and is rejected outside 1-100.
+    **Share windows.** When access comes from a personal share rather than self or group,
+    the start date of a dated read may be narrowed to the share's own window. The response
+    does not say it happened. Read the dates that come back before describing the period
+    you covered.
+
+    **Pagination:** 0-based `pageNumber` and `pageSize`. Page sizes and defaults differ per
+    tool and are stated on each. `get_marker_samples` reports `totalCount` and `totalPages`
+    as `1` regardless of the real total — page it with `hasNextPage` only.
+
+    **Dates.** There are two kinds and sending the wrong one returns 400.
+    `recordStartDate`/`recordEndDate` are patient-local calendar days (`YYYY-MM-DD`).
+    `startDate`/`endDate` on observations, journals and symptoms are UTC RFC3339 instants
+    and must carry a trailing `Z` (`2026-08-28T00:00:00Z`). Each tool states which it takes.
+    Inconsistency across the nine date-taking reads is tracked as AIP-234.
 
     **Errors:** `get_current_user` returns 401 if unauthenticated and 404 if the JWT has
     no linked Arii user. Wrong ID kind (Airia profile ID / Keycloak `sub` as `userId`)
-    returns 404 under Bearer/passthrough. Some cross-user Observation queries return 400
-    ("Tenant context required...") even with `X-Access-Context: group`.
+    returns 404 under Bearer/passthrough.
 
     **IDs:** All entity IDs are GUIDs (e.g., `3fa85f64-5717-4562-b3fc-2c963f66afa6`).
 
@@ -106,14 +148,16 @@ security:
 tags:
   - name: Users
     description: |
-      User identity. Under Bearer/passthrough, call `get_current_user` first
-      to resolve the caller's Arii user ID before other user-scoped tools.
+      User identity and profile. `get_current_user` returns the caller; `get_user` and
+      `get_user_preferences` return a named user's account record and profile facts.
   - name: Journal
     description: Patient wellness journal entries
   - name: Meals
     description: Meal and nutrition tracking
   - name: Medications
-    description: Medication prescriptions and adherence history
+    description: |
+      Medications and supplements, read from the user-products store: what someone takes
+      now, everything they have taken, dose-by-dose adherence, and the adherence summary.
   - name: Notes
     description: Clinical and provider notes for patients
   - name: Observations
@@ -139,19 +183,17 @@ paths:
       operationId: get_current_user
       summary: Get the authenticated caller's Arii identity
       description: |
-        **Never2 Never Call this first under Bearer/passthrough** before any tool that needs an Arii
-        `userId` or `requestingUserId`. Resolves the caller from the bearer token.
+        Returns the person making the request: their Arii user ID, profile ID, email,
+        name, and active group.
 
-        Returns `id`, `airiaProfileId`, `firstName`, `lastName`, `email`, `isVerified`,
-        and `activeGroupId`. The `id` field is the Arii user ID. Reuse it for later
-        calls. `airiaProfileId` is correlation with Airia Platform only; it is **not**
-        valid as path/query `userId` under Bearer.
+        Use when the question is about the requester themselves or when you need to
+        determine whether the current session has a linked Arii account. It is not a step
+        before reading a patient's data: no tool here needs `requestingUserId`.
 
-        Carries no demographics: no date of birth, sex, height, or weight. Those live
-        on user preferences: call `get_user_preferences` with the returned `id`.
+        Do not use the returned ID as the `userId` for a patient data read. For a
+        clinician, this would read the clinician's own record instead of the patient.
 
-        No path parameters. Identity comes from the Bearer token. 401 if
-        unauthenticated; 404 if the token has no linked Arii user.
+        A 404 means the session has no linked Arii account.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -173,33 +215,26 @@ paths:
       operationId: get_user
       summary: Get a user by Arii user ID
       description: |
-        Returns one user's account record: names, email, verification flag, active
-        group, `airiaProfileId`, and last sync timestamps for Apple Health, Garmin,
-        and Health Connect. Use it to check whether a device is still feeding data.
+        Returns basic identity information for a user: name, email, Airia profile ID,
+        active group, profile image (in `imageBase64`, which holds a URL), and the last
+        Apple Health sync timestamp.
 
-        **Requires an Arii user ID** (`UserDto.id`), not an Airia Platform profile ID.
-        Passing an Airia profile ID returns 404 under Bearer/passthrough auth.
+        Use to confirm a user's name or email from a known user ID, or to check whether
+        Apple Health is still feeding data — a stale sync timestamp explains missing
+        recent readings better than any marker read can.
 
-        For **your own** profile under Bearer: call `get_current_user` first and pass
-        its returned `id` here. For another user: use their Arii user ID from agent
-        execution context, never an Airia profile ID.
+        No other connector's sync time is here. `lastGarminSyncTimestamp` and
+        `lastHealthConnectSyncTimestamp` are on the response and are always null, and no
+        tool in this catalog reports when Garmin, Withings, Oura or any other connector
+        last synced.
 
-        `UserDto` has no date of birth or sex. Demographics live on user preferences:
-        use `get_user_preferences` with the same `userId`.
+        Does not return date of birth, sex, timezone, or allergies. Use
+        `get_user_preferences` for those.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID (`UserDto.id` GUID). For self under Bearer, use
-            `get_current_user`.id. Do not pass an Airia profile ID, Keycloak `sub`,
-            or group ID.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/AriiUserIdPath"
       responses:
         "200":
           description: User profile
@@ -207,71 +242,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserDto"
-  # NOTE: DELETE /api/v1/Users/{userId} is intentionally not exposed as an MCP tool.
-  # Permanent user deletion is a privileged operation and must be performed through
-  # the Arii UI, not by an agent.
 
   /api/v3/UserPreferences/{userId}:
     get:
       tags: [Users]
       operationId: get_user_preferences
-      summary: Get a user's profile preferences and demographics
+      summary: Get a user's profile information
       description: |
-        Returns the user's preference record: demographics (`dateOfBirth` as
-        `YYYY-MM-DD`, `sex`, `height`/`heightUnit`, `weight`/`weightUnit`), names,
-        phone, `aboutMe`, `timeZoneIdentifier`, `useMetricSystem`, preferred health
-        data source, allergies, dietary preferences, and goals.
+        Returns a user's profile information: date of birth, sex, timezone, height,
+        weight, allergies, dietary preferences, and goals.
 
-        **Use this for:** "How old is she / what is his date of birth?", "What is my
-        height / weight / BMI inputs?", "Does the patient have allergies or dietary
-        restrictions?", "Which timezone / unit system does the user use?".
-        `get_current_user` and `get_user` do **not** carry any of this.
+        Use for profile information, not measured health data.
 
-        **Requires an Arii user ID** (`UserDto.id`), not an Airia profile ID.
-        For self under Bearer: call `get_current_user` first and pass its `id`.
-        **Provider reading a patient:** pass the patient's Arii user ID and send
-        `X-Access-Context: group`; otherwise share/family permissions are checked
-        and a 403 means missing access, not missing data. Shared fields may be
-        filtered by the granting user's permissions.
+        For permitted cross-user reads, fields may be filtered by the requester's
+        permissions. A missing field may therefore be hidden rather than unset — never
+        report it as "not recorded".
 
-        Enum fields are integers: `sex` 0=Male, 1=Female, 2=Other.
-        `preferredDataSource` 0=Arii, 1=Fitbit, 2=Oura, 3=Withings, 4=AppleHealth,
-        5=Garmin, 6=Whoop (see schema for the full list); prefer
-        `preferredDataSourceName` when present.
+        If no timezone was selected, `timeZoneIdentifier` defaults to `America/New_York`.
+        Treat this as a default, not a user preference.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID (`UserDto.id` GUID). For self under Bearer, use
-            `get_current_user`.id. Do not pass an Airia profile ID, Keycloak `sub`,
-            or group ID.
-          schema:
-            type: string
-            format: uuid
-        - name: X-Access-Context
-          in: header
-          required: false
-          description: |
-            Set to `group` when a provider/team member reads a patient in their
-            organization. Omit for self or family/share-based access.
-          schema:
-            type: string
-            enum: [group]
+        - $ref: "#/components/parameters/AriiUserIdPath"
       responses:
         "200":
-          description: User preferences and demographics
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserPreferencesDto"
+          description: User preferences (profile facts)
         "403":
-          description: Caller lacks family, share, or group permission to read this user's profile
+          description: Requester is not permitted to read this user's preferences
         "404":
-          description: No preferences exist for this user, or wrong ID kind (Airia profile ID / Keycloak `sub`)
+          description: No preferences record for this user
 
   # ===================
   # JOURNAL ENDPOINTS
@@ -282,14 +285,19 @@ paths:
       operationId: get_user_journals
       summary: Get journal entries for a user
       description: |
-        Journal entries for a day or range with title, content, image URLs, and
-        structured activity responses. Use for how the patient described feeling.
+        Returns journal entries written by a user over a date range.
 
-        Filters on `date` or `startDate`/`endDate` only. There is no local-calendar
-        record-date option, unlike meals.
+        Use for the user's own written account of how they were feeling or what they
+        experienced, not for measured health data.
 
-        Path `userId` must be an Arii user ID. For self under Bearer, use
-        `get_current_user`.id.
+        Dates must be UTC timestamps such as `2026-08-28T00:00:00Z`. A bare calendar
+        date returns 400.
+
+        When no entries match, this returns 404 with a message, not an empty list. Read
+        that as no entries for the filter, not as an error.
+
+        Treat journal content as the user's account; it may differ from measured health
+        data.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -297,19 +305,19 @@ paths:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - name: date
           in: query
-          description: Filter by specific date (ISO 8601).
+          description: Filter by specific date. UTC RFC3339 with a trailing `Z`.
           schema:
             type: string
             format: date-time
         - name: startDate
           in: query
-          description: Filter start date (ISO 8601).
+          description: Filter start date. UTC RFC3339 with a trailing `Z`; a bare date returns 400.
           schema:
             type: string
             format: date-time
         - name: endDate
           in: query
-          description: Filter end date (ISO 8601).
+          description: Filter end date. UTC RFC3339 with a trailing `Z`; a bare date returns 400.
           schema:
             type: string
             format: date-time
@@ -322,13 +330,20 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/JournalDto"
+        "404":
+          description: No entries matched the filter. Not an error.
 
   /api/v1/Journal/journal/{journalId}:
     get:
       tags: [Journal]
       operationId: get_journal
       summary: Get a journal entry by ID
-      description: One journal entry in full.
+      description: |
+        Returns one journal entry in full, including its body text.
+
+        Use only with a journal ID returned by `get_user_journals`.
+
+        Use when the user asks about a specific journal entry already identified.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -336,40 +351,13 @@ paths:
         - name: journalId
           in: path
           required: true
-          description: The journal entry ID (GUID).
+          description: The journal entry ID (GUID), from `get_user_journals`. Never assembled.
           schema:
             type: string
             format: uuid
       responses:
         "200":
           description: Journal entry details
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JournalDto"
-
-  /api/v1/Journal:
-    post:
-      tags: [Journal]
-      operationId: create_journal
-      summary: Create a new journal entry
-      description: |
-        Creates a journal entry. Required: `userId` and `journalDate`. Call only when
-        the user asked for something to be logged.
-
-        Images go in as base64 via `imageBase64List`; the read side returns URLs instead.
-      x-mcp-annotations:
-        readOnlyHint: false
-        idempotentHint: false
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/JournalUpsertDto"
-      responses:
-        "201":
-          description: Created journal entry
           content:
             application/json:
               schema:
@@ -384,49 +372,50 @@ paths:
       operationId: get_user_meals
       summary: Get all meals for a user
       description: |
-        Logged meals for a day or range with portion size, metric and imperial serving
-        sizes, nutrition samples, and any co-eaters.
+        Returns meals recorded by a user over a date range, including their attached
+        nutrition data.
 
-        Accepts `date`, `startDate`/`endDate`, or `recordStartDate`/`recordEndDate`.
-        Prefer the record dates, which are the patient's local calendar days.
+        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`.
 
-        Path `userId` must be an Arii user ID. For self under Bearer, use
-        `get_current_user`.id.
+        When no meals match, this returns 404 with a message, not an empty list. That is
+        the tool saying it found no records for the filter — it is not an error, and it
+        does not mean the person did not eat. Dietary marker data can exist without meal
+        records.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
-        - name: date
-          in: query
-          description: Filter by specific date (ISO 8601).
-          schema:
-            type: string
-            format: date-time
-        - name: startDate
-          in: query
-          description: Filter start date inclusive (ISO 8601).
-          schema:
-            type: string
-            format: date-time
-        - name: endDate
-          in: query
-          description: Filter end date inclusive (ISO 8601).
-          schema:
-            type: string
-            format: date-time
         - name: recordStartDate
           in: query
-          description: Patient local calendar start day (YYYY-MM-DD). Prefer this pair over startDate/endDate.
+          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
-          description: Patient local calendar end day (YYYY-MM-DD). Prefer this pair over startDate/endDate.
+          description: Patient local calendar end day (YYYY-MM-DD). Send together with recordStartDate.
           schema:
             type: string
             format: date
+        - name: date
+          in: query
+          description: Filter by specific date (ISO 8601). Prefer the record-date pair.
+          schema:
+            type: string
+            format: date-time
+        - name: startDate
+          in: query
+          description: Filter start date (ISO 8601). Prefer the record-date pair.
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Filter end date (ISO 8601). Prefer the record-date pair.
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: List of meals
@@ -436,13 +425,21 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/MealDto"
+        "404":
+          description: No meals matched the filter. Not an error, and not proof the person did not eat.
 
   /api/v1/Meals/meal/{mealId}:
     get:
       tags: [Meals]
       operationId: get_meal
       summary: Get a specific meal by ID
-      description: One meal with its nutrition breakdown, image, and associated users.
+      description: |
+        Returns one meal in full, including its complete nutrition breakdown.
+
+        Use only with a meal ID returned by `get_user_meals`.
+
+        Use when the user asks about a specific meal already identified in the
+        conversation.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -450,7 +447,7 @@ paths:
         - name: mealId
           in: path
           required: true
-          description: The meal ID (GUID).
+          description: The meal ID (GUID), from `get_user_meals`. Never assembled.
           schema:
             type: string
             format: uuid
@@ -462,142 +459,243 @@ paths:
               schema:
                 $ref: "#/components/schemas/MealDto"
 
-  /api/v1/Meals:
-    post:
-      tags: [Meals]
-      operationId: create_meal
-      summary: Create a new meal
-      description: |
-        Records a meal the user reported: name, description, date and local record date,
-        portion size, metric and imperial serving sizes, optional nutrition samples, and
-        the users it applies to. Call only when the user asked for something to be logged.
-      x-mcp-annotations:
-        readOnlyHint: false
-        idempotentHint: false
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MealUpsertDto"
-      responses:
-        "201":
-          description: Created meal
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MealDto"
-
   # ===================
-  # MEDICATION ENDPOINTS
+  # MEDICATION AND SUPPLEMENT ENDPOINTS (user-products)
   # ===================
-  /api/v1/Medications/user/{userId}:
-    post:
-      tags: [Medications]
-      operationId: create_medication
-      summary: Create a new medication for a user
-      description: |
-        Adds a medication with name, type, dose value and unit, and a **required
-        schedule**, which generates the forward dose log that adherence reads report
-        on. Call only when the user asked for something to be logged.
-
-        `requestingUserId` is required in the body. Without a valid schedule there is
-        nothing for `get_medication_history` to return.
-      x-mcp-annotations:
-        readOnlyHint: false
-        idempotentHint: false
-      parameters:
-        - $ref: "#/components/parameters/AriiUserIdPath"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [requestingUserId, name, schedule]
-              description: Medication creation request
-              properties:
-                requestingUserId:
-                  type: string
-                  format: uuid
-                  description: |
-                    Arii user ID of the caller. Pass `get_current_user`.id. Not an
-                    Airia profile ID.
-                name:
-                  type: string
-                  description: Medication name
-                medicationType:
-                  type: string
-                  description: Medication form (e.g. Tablet, Liquid, Lotion, Inhaler).
-                doseValue:
-                  type: number
-                  description: Numeric dose amount.
-                doseUnit:
-                  type: string
-                  description: Dose unit (e.g. Mg, Ml, Iu).
-                schedule:
-                  $ref: "#/components/schemas/MedicationScheduleDto"
-                isActive:
-                  type: boolean
-                  description: Whether the medication is currently active. Defaults to true on the API.
-                nickname:
-                  type: string
-                  description: Optional display nickname.
-                notes:
-                  type: string
-                  description: Additional notes
-      responses:
-        "201":
-          description: Created medication
-
-  /api/v1/user-products/user/{userId}/history/logs:
+  /api/v1/user-products/user/{userId}/active:
     get:
       tags: [Medications]
-      operationId: get_medication_history
-      summary: Get medication adherence history for a user
+      operationId: get_active_medications_and_supplements
+      summary: Get what a person is currently taking
       description: |
-        Scheduled doses over a range with scheduled date and time, dose count, status,
-        when it was actually taken, schedule type, and instructions. This is the
-        adherence read, not the current medication list.
+        Returns what a person is currently taking — medications and supplements together
+        — one row per item, including display name, form, strength, dose quantity,
+        schedule, instructions, and today's dose logs.
 
-        `requestingUserId` is required. `type` is pinned to Medication. Path `userId`
-        is the patient; for self under Bearer, pass `get_current_user`.id as both
-        path `userId` and `requestingUserId`.
+        Use for the current medication or supplement list.
+
+        `type` is optional. Omit it for both categories, or pass `Medication` or
+        `Supplement` for one. Omitting it does not default to medications.
+
+        Returns only items active today. An item that is on hold, completed or stopped,
+        or whose schedule has not started or has already ended, is not returned.
+
+        Strength is `strengthValue` with `strengthUnitCode`, a free-text unit code that
+        can carry a concentration such as `mg/mL`. Always report the two together.
+
+        `todayHistory` holds today's dose logs for the item. An empty `todayHistory` does
+        not mean nothing was scheduled: a day's logs exist only once the prescription was
+        created or updated, so today's rows may not have been created yet.
+
+        For whether a dose was taken on an earlier day, use `get_dose_history`.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
-        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: type
+          in: query
+          description: |
+            Optional product type. Omit for both categories; pass `Medication` or
+            `Supplement` for one. Omitting does not default to medications.
+          schema:
+            type: string
+            enum: [Medication, Supplement]
+      responses:
+        "200":
+          description: Active prescriptions for the user
+        "403":
+          description: Requester is not permitted to read this user's prescriptions
+
+  /api/v1/user-products/user/{userId}/prescriptions:
+    get:
+      tags: [Medications]
+      operationId: get_all_medications_and_supplements
+      summary: Get every medication or supplement on a person's record, current and past
+      description: |
+        Returns every medication or supplement on a person's record, current and past,
+        whatever its status — `Active`, `OnHold`, `Completed`, `Stopped`, `Superseded`
+        or `EnteredInError` — with `deactivatedAt` for anything no longer in use.
+
+        Use for what someone used to take, when they stopped, or whether they have been
+        on a drug before. For what they are taking now, use
+        `get_active_medications_and_supplements`.
+
+        `type` must always be sent. It accepts `Medication` or `Supplement`, and omitting
+        it returns medications only, with a 200 and nothing saying supplements were left
+        out. Call the tool twice when both categories are needed.
+
+        Read `status` on every row. This tool returns discontinued and mistakenly entered
+        items alongside current ones, so presenting the rows as a medication list would
+        overstate what the person takes.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
         - name: type
           in: query
           required: true
-          description: Product type. This tool is the medication adherence read; always Medication.
+          description: |
+            Product type. Always send it: an absent value binds to `Medication` and
+            silently drops supplements with a 200. Call twice for both categories.
           schema:
             type: string
-            enum: [Medication]
-            default: Medication
-        - name: startDate
-          in: query
-          description: Filter start date (ISO 8601).
-          schema:
-            type: string
-            format: date-time
-        - name: endDate
-          in: query
-          description: Filter end date (ISO 8601).
-          schema:
-            type: string
-            format: date-time
+            enum: [Medication, Supplement]
       responses:
         "200":
-          description: Medication dose history logs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/UserProductHistoryLogDto"
+          description: All prescriptions of that type, whatever their status
+        "403":
+          description: Requester is not permitted to read this user's prescriptions
+
+  /api/v1/user-products/user/{userId}/history:
+    get:
+      tags: [Medications]
+      operationId: get_dose_history
+      summary: Get dose-by-dose medication and supplement adherence
+      description: |
+        Returns the individual scheduled doses of a person's medications and supplements,
+        grouped by the day each dose was scheduled for, with its status: `Pending`,
+        `Taken`, `Skipped`, or `Missed`.
+
+        Use for medication or supplement adherence, and to determine whether a dose was
+        taken.
+
+        This is not the current medication list. Use
+        `get_active_medications_and_supplements` for that.
+
+        `type` is optional. Omit it for both categories, or pass `Medication` or
+        `Supplement` for one.
+
+        Always send `startDate`. Without it the response reaches back to the person's
+        first dose, unsorted and uncapped. `endDate` defaults to today in the person's
+        own timezone.
+
+        `dateFilterBy` defaults to `ScheduledDate`, which keeps each dose in the day it
+        was due. Pass `EffectiveDate` to window taken doses by when they were actually
+        taken instead.
+
+        On the default `ScheduledDate` axis, `yyyy-MM-dd` is fine. On `EffectiveDate`,
+        send a UTC timestamp such as `2026-08-28T00:00:00Z`: that axis compares against
+        an instant, and a bare date returns 400.
+
+        `Pending` means a dose is still due and `Missed` means it is past its grace
+        period. The endpoint reconciles the two before answering, so both can be reported
+        as read.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: type
+          in: query
+          description: Optional product type. Omit for both categories.
+          schema:
+            type: string
+            enum: [Medication, Supplement]
+        - name: startDate
+          in: query
+          description: |
+            Window start. Always send it. `yyyy-MM-dd` on the default ScheduledDate axis;
+            a UTC instant with `Z` when `dateFilterBy=EffectiveDate`.
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          description: Window end. Defaults to today in the person's own timezone.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Optional adherence status filter.
+          schema:
+            type: string
+            enum: [Pending, Taken, Skipped, Missed]
+        - name: dateFilterBy
+          in: query
+          description: |
+            Which date the window applies to. `ScheduledDate` (default) keeps each dose in
+            the day it was due; `EffectiveDate` windows taken doses by when they were
+            actually taken.
+          schema:
+            type: string
+            enum: [ScheduledDate, EffectiveDate]
+            default: ScheduledDate
+      responses:
+        "200":
+          description: Dose history grouped by scheduled day
+        "403":
+          description: Requester is not permitted to read this user's adherence history
+
+  /api/v1/user-products/user/{userId}/adherence-stats:
+    get:
+      tags: [Medications]
+      operationId: get_adherence_stats
+      summary: Get a person's dose counts by outcome and adherence rate
+      description: |
+        Returns counts of a person's doses by outcome — `total`, `taken`, `skipped`,
+        `missed` and `pending` — plus `adherenceRate` as a percentage.
+
+        Use when the question is how well someone is keeping to their doses, rather than
+        reading every dose through `get_dose_history` and counting them.
+
+        `type` is optional. Omit it for one figure covering medications and supplements
+        combined, or pass `Medication` or `Supplement` for a single category.
+
+        `startDate` and `endDate` are both optional and neither is defaulted. The window
+        applies to the day each dose was scheduled for. Send both whenever the question is
+        about a period ("this month", "since starting X"); send neither only when the
+        question is about the person's whole history, because that is what you get back.
+
+        Omitting `endDate` leaves the window open-ended, so doses that are not yet due are
+        counted as well. Those land in `pending`.
+
+        `adherenceRate` is `taken` divided by `total` minus `pending`. It is reported as 0
+        when nothing in the window has resolved yet, so check `total` and `pending` before
+        describing a rate of 0 as poor adherence.
+
+        A skipped dose counts against the rate exactly as a missed one does, even though
+        the person chose to skip it.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: type
+          in: query
+          description: Optional product type. Omit for one combined figure across both categories.
+          schema:
+            type: string
+            enum: [Medication, Supplement]
+        - name: startDate
+          in: query
+          description: Window start. Optional. Send it with `endDate` to scope the counts to a period; with neither date the counts cover the whole history.
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          description: Window end. Optional and not defaulted — omitting it leaves the window open-ended and counts doses that are not yet due as `pending`.
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Adherence counts and rate
+        "403":
+          description: Requester is not permitted to read this user's adherence stats
 
   # ===================
   # NOTE ENDPOINTS
@@ -608,13 +706,20 @@ paths:
       operationId: list_notes
       summary: List notes with pagination and filters
       description: |
-        Paged clinical notes with title, date, content, categories, attached patients,
-        draft state, and author. Filter by creator, patient, private flag, archive
-        state, category, or free text.
+        Returns clinical notes for a provider.
 
-        Drafts are included by default (`includeDrafts=true`); pass false for
-        finalized notes only. This is the provider-facing list. Patients should use
-        `get_shared_notes`.
+        Use `patientId` to scope the results to a specific patient. Without it, the tool
+        may return notes across the tenant and the results may belong to unrelated
+        patients.
+
+        Patients should use `get_shared_notes` instead.
+
+        `pageNumber` is 0-based and `pageSize` is 1-100, default 20. Outside that range
+        returns 400.
+
+        This is the v1 shape, where a note's `date` is a full timestamp. The v2 route
+        returns the same fields with `date` as a calendar day; the catalog stays on v1
+        deliberately so the tool contract does not change under agents mid-flight.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -646,11 +751,16 @@ paths:
         - name: patientId
           in: query
           description: |
-            Filter by the patient's Arii user ID (`UserDto.id` GUID) — not an Airia
-            profile ID. For notes about yourself, pass your own `get_current_user`.id.
+            The patient's Arii user ID (`UserDto.id` GUID) — not an Airia profile ID.
+            **Always set this.** Without it the call reaches across the tenant.
           schema:
             type: string
             format: uuid
+        - name: isPrivate
+          in: query
+          description: Filter by the note's private flag. Omit to return both private and non-private notes.
+          schema:
+            type: boolean
         - name: isArchived
           in: query
           description: Filter by archived status.
@@ -663,7 +773,7 @@ paths:
             type: string
         - name: categories
           in: query
-          description: Filter by category names (comma-separated).
+          description: Filter by category names (comma-separated). Exact strings come from `list_note_categories`.
           schema:
             type: array
             items:
@@ -675,16 +785,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PagedNotes"
+
   /api/v1/Notes/shared:
     get:
       tags: [Notes]
       operationId: get_shared_notes
       summary: Get notes shared with the current user
       description: |
-        Notes shared with the user, with who shared them and when. The correct
-        patient-facing note read: a patient sees only these.
+        Returns clinical notes that a clinician has shared with the patient.
 
-        Returns a plain list, not a page. There is no `pageNumber` here.
+        Use for the patient-side view of shared clinical notes.
+
+        Private and archived notes are excluded.
+
+        Each note carries `sharedBy`, `sharedAt` and `sharer` — who shared it and when —
+        alongside `creator`, `version` and `hasDraft`.
+
+        Returns a plain list, not a page. There is no `pageNumber`.
+
+        An empty result means no notes were shared with the patient. It does not mean the
+        patient's chart contains no notes.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -693,8 +813,7 @@ paths:
           in: query
           description: |
             Arii user ID (`UserDto.id` GUID) whose shared notes to fetch — not an Airia
-            profile ID. Prefer passing `get_current_user`.id explicitly rather than
-            relying on the server to infer the caller.
+            profile ID.
           schema:
             type: string
             format: uuid
@@ -714,8 +833,12 @@ paths:
       operationId: get_note
       summary: Get a note by ID
       description: |
-        One clinical note in full, including its version, draft state, categories, and
-        the patients it is attached to.
+        Returns one clinical note in full, including its body, category, and sharing
+        state.
+
+        Use only with a note ID returned by `list_notes` or `get_shared_notes`.
+
+        Returns 404 when the note does not exist or the requester cannot read it.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -723,7 +846,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: The note ID (GUID).
+          description: The note ID (GUID), from `list_notes` or `get_shared_notes`.
           schema:
             type: string
             format: uuid
@@ -734,9 +857,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NoteDto"
+        "404":
+          description: No such note, or the requester cannot read it
+
+  /api/v1/note-categories:
+    get:
+      tags: [Notes]
+      operationId: list_note_categories
+      summary: List all note categories
+      description: |
+        Returns the platform's note categories, including each category's ID and exact
+        name.
+
+        Use when you need the valid category IDs or exact category names for filtering
+        notes.
+
+        This catalog is not patient-specific.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      responses:
+        "200":
+          description: List of note categories
 
   # ===================
-  # OBSERVATION ENDPOINTS (v2)
+  # OBSERVATION ENDPOINTS
   # ===================
   /api/v2/Observation:
     get:
@@ -744,25 +889,29 @@ paths:
       operationId: list_observations
       summary: List observations with filters and pagination
       description: |
-        Paged observation **containers** filtered by type (17 values including Lab,
-        Activity, SleepSummary, Assessment, Appointment, BodyCompositionSummary, and
-        Recovery) plus subtype, source, user, and date. Use for draw dates, ids, and
-        metadata — not for current biomarker values.
+        Returns events in a user's record over a date range, such as lab panels, scans,
+        workouts, and self-reports. Includes event type, date, and source.
 
-        **Do not set `IncludeHealthKitSamples=true`.** Each sample embeds a full
-        `markerType` and parent `observation`; a single lab panel can exceed context
-        limits. For lipids and current lab numbers use `get_user_marker_types_with_data`
-        then `get_marker_summary` with `specificMarkers`. `PageSize` defaults to 10
-        and is rejected outside 1-100.
+        Use to find or identify observations. Use marker tools for the measurements
+        inside an observation.
 
-        `UserId` must be an Arii user ID. For self under Bearer, pass
-        `get_current_user`.id.
+        Use `RecordStartDate` and/or `RecordEndDate` as `yyyy-MM-dd`. Either date can be
+        used alone.
 
-        **Dates:** `StartDate` and `EndDate` MUST be UTC RFC3339 with a trailing `Z`
-        (example: `2026-08-01T00:00:00Z`). Values like `2020-01-01T00:00:00` (no `Z`)
-        cause HTTP 400. If a 400 mentions DateTime Kind / timestamptz / Unspecified,
-        retry with both dates omitted. If it says "Tenant context required", that is
-        an access error, not missing labs.
+        Do not omit the date range to work around an error. Without a range, the tool
+        returns the most recent rows, which may answer a different question.
+
+        `PageNumber` is 0-based and `PageSize` is 1-100, default 10.
+
+        **Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside
+        every matching event. One lab panel came back at 288,000 characters; a ten-panel
+        request was rejected outright for exceeding the context window. For underlying
+        samples use `get_observation_samples`.
+
+        `MarkerTypeIds` narrows the result to the observations that carry those marker
+        types, which is the cheap way to find the panel a named marker came from. Pass
+        `markerTypeId` values, and leave `IncludeHealthKitSamples` false — this scopes which
+        observations come back, not how much each one carries.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -770,8 +919,7 @@ paths:
         - name: UserId
           in: query
           description: |
-            Filter by Arii user ID. For self, use `get_current_user`.id. Do not pass
-            an Airia profile ID.
+            Filter by Arii user ID. Do not pass an Airia profile ID.
           schema:
             type: string
             format: uuid
@@ -781,6 +929,17 @@ paths:
           schema:
             type: string
             enum: [Lab, DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary, HrvSummary, Other, LifestyleHabit, Procedure, Condition, Assessment, Appointment, BodyCompositionSummary, Recovery]
+        - name: MarkerTypeIds
+          in: query
+          description: |
+            Restrict to observations carrying these marker types. Marker type IDs (GUIDs)
+            from `get_user_marker_types_with_data` or `bulk_search_marker_types` — the same
+            ids `specificMarkers` takes on the marker tools.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
         - name: SubType
           in: query
           description: Filter by observation sub-type.
@@ -791,21 +950,31 @@ paths:
           description: Filter by data source (exact match, e.g., "Oura", "Fitbit", "Garmin").
           schema:
             type: string
+        - name: RecordStartDate
+          in: query
+          description: Patient local calendar start day (YYYY-MM-DD). Can be used alone.
+          schema:
+            type: string
+            format: date
+        - name: RecordEndDate
+          in: query
+          description: Patient local calendar end day (YYYY-MM-DD). Can be used alone.
+          schema:
+            type: string
+            format: date
         - name: StartDate
           in: query
           description: |
-            Inclusive range start. UTC RFC3339 **with `Z` only**, e.g. `2026-08-01T00:00:00Z`.
-            Omit this (and EndDate) unless a date window is required. Naive ISO datetimes
-            without `Z` (e.g. `2020-01-01T00:00:00`) return HTTP 400.
+            Instant range start. UTC RFC3339 **with `Z` only**, e.g. `2026-08-01T00:00:00Z`.
+            A bare `2026-08-01` returns 400. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
         - name: EndDate
           in: query
           description: |
-            Inclusive range end. UTC RFC3339 **with `Z` only**, e.g. `2026-08-18T23:59:59Z`.
-            Omit this (and StartDate) unless a date window is required. Naive ISO datetimes
-            without `Z` return HTTP 400.
+            Instant range end. UTC RFC3339 **with `Z` only**. A bare date returns 400.
+            Prefer the record-date pair.
           schema:
             type: string
             format: date-time
@@ -824,9 +993,8 @@ paths:
         - name: IncludeHealthKitSamples
           in: query
           description: |
-            Include HealthKit quantity samples on each listed observation (default
-            false). **Leave false.** True repeats huge nested sample payloads per row
-            and can blow the model context. Use Marker tools for values.
+            **Leave false.** True repeats every nested sample payload per row and blows
+            the model context. Use `get_observation_samples` for values.
           schema:
             type: boolean
             default: false
@@ -837,34 +1005,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PagedObservations"
-    post:
-      tags: [Observations]
-      operationId: create_observation
-      summary: Create a new observation
-      description: |
-        Records an observation of any of the 17 types (Lab, Activity, SleepSummary,
-        Assessment, Appointment, BodyCompositionSummary, Recovery, and the rest)
-        with optional nested measurement samples. The correct home for activities
-        and workouts. Call only when the user asked for something to be logged.
-
-        Needs `type` and `source`. Measurements go in `healthKitQuantitySamples`,
-        each carrying `markerTypeId`, `recordDate`, `value`, and `unit`.
-      x-mcp-annotations:
-        readOnlyHint: false
-        idempotentHint: false
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ObservationCreateDto"
-      responses:
-        "201":
-          description: Created observation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ObservationDto"
 
   /api/v2/Observation/{id}:
     get:
@@ -872,15 +1012,18 @@ paths:
       operationId: get_observation
       summary: Get an observation by ID
       description: |
-        One observation container with metadata, tags, and `sampleCount`. Use only when
-        you already have an observation id from a cheap `list_observations` call and
-        need container-level fields — not for "how are my lipids?" or other current-value
-        questions.
+        Returns one observation in full by ID, including type, dates, source, metadata,
+        and tags.
 
-        **Do not set `includeHealthKitSamples=true`.** It returns every sample on the
-        panel with nested `markerType` and `observation` objects (hundreds of KB). For
-        lab values use `get_user_marker_types_with_data` then `get_marker_summary` with
-        `specificMarkers`.
+        Use only with an observation ID returned by `list_observations`.
+
+        `sampleCount` reads 0 unless the samples themselves were fetched, so it cannot be
+        used to decide whether a panel has results (AIP-247).
+
+        **Never set `includeHealthKitSamples=true`** — the two observation tools spell the
+        flag differently and the ban covers both. A single observation can contain an
+        unbounded number of measurements. Use `get_observation_samples` when the
+        underlying samples are needed.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -888,15 +1031,13 @@ paths:
         - name: id
           in: path
           required: true
-          description: The observation ID (GUID).
+          description: The observation ID (GUID), from `list_observations`.
           schema:
             type: string
             format: uuid
         - name: includeHealthKitSamples
           in: query
-          description: |
-            Include HealthKit quantity samples (default false). **Leave false** unless
-            debugging a specific observation id; payloads are very large.
+          description: "**Leave false.** Payloads are unbounded. Use `get_observation_samples` instead."
           schema:
             type: boolean
             default: false
@@ -907,8 +1048,120 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ObservationDto"
+
+  /api/v3/Observation/healthkit/all-samples:
+    get:
+      tags: [Observations]
+      operationId: get_observation_samples
+      summary: Get raw measurement samples with the patient's own reference range
+      description: |
+        Returns raw measurement samples over a date range, including the observation they
+        came from and the reference range applicable to the patient.
+
+        Use when you need a patient-specific reference range for a named marker — the
+        question "is this result normal for this person?". That is what this tool is for.
+
+        It is not the general history path. There is no marker filter, so a broad call
+        returns every sample of every marker in the window. Keep the date range tight,
+        and always set `maxSamplesPerMarker` — for a "is this normal" question, 1 is
+        usually right. For a trend over time use `get_marker_averages`, and for a
+        marker's individual readings use `get_marker_samples`.
+
+        Both `recordStartDate` and `recordEndDate` are required as `yyyy-MM-dd`.
+
+        `observationTypes` uses exact matching against the observation type name. The
+        full set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,
+        `DailySummary`, `SleepSummary`, `HrvSummary`, `Other`, `LifestyleHabit`,
+        `Procedure`, `Condition`, `BodyCompositionSummary`, `Assessment`, `Recovery` and
+        `Appointment`. Lab results are `Lab`; a DEXA or InBody report arrives as `Scan`;
+        a clinician's own measurement is `Exam`. `Appointment` carries no samples at all, so
+        filtering by it here returns nothing by construction.
+
+        `appliedReferenceRange` is patient-specific, filtered by sex, and converted to the
+        sample's unit. It may be null when no applicable range exists.
+
+        Do not confuse `appliedReferenceRange` with `metaData.referenceRange`, which is the
+        range printed on the lab report.
+
+        `maxSamplesPerMarker` limits the number of newest samples returned per marker.
+
+        `pageNumber` is 0-based and `pageSize` is 1-1000, default 100. Page with
+        `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - name: userId
+          in: query
+          description: |
+            Arii user ID whose samples to fetch. This is a query parameter, not a path
+            segment. Defaults to the requester when omitted — send it explicitly on any
+            patient read. Not an Airia profile ID.
+          schema:
+            type: string
+            format: uuid
+        - name: recordStartDate
+          in: query
+          required: true
+          description: Patient local calendar start day (YYYY-MM-DD). Required with recordEndDate.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          required: true
+          description: Patient local calendar end day (YYYY-MM-DD). Required with recordStartDate.
+          schema:
+            type: string
+            format: date
+        - name: observationTypes
+          in: query
+          description: |
+            Comma-separated exact type names, e.g. `Lab,Scan`. Valid values: Lab,
+            DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary,
+            HrvSummary, Other, LifestyleHabit, Procedure, Condition, BodyCompositionSummary,
+            Assessment, Recovery, Appointment.
+          schema:
+            type: string
+        - name: tags
+          in: query
+          description: Optional marker-type tag filter.
+          schema:
+            type: array
+            items:
+              type: string
+        - name: maxSamplesPerMarker
+          in: query
+          description: |
+            Cap on the newest samples returned per marker type (>= 1). **Always set it.**
+            For "is this normal", 1 is usually right.
+          schema:
+            type: integer
+        - name: pageNumber
+          in: query
+          description: Page number (0-based, default 0).
+          schema:
+            type: integer
+            default: 0
+        - name: pageSize
+          in: query
+          description: Page size (1-1000, default 100).
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Paginated raw samples with applied reference ranges
+        "400":
+          description: recordStartDate and recordEndDate are both required
+        "403":
+          description: Requester is not permitted to read this user's samples
+
   # ===================
-  # DOCUMENT ENDPOINTS (v2)
+  # DOCUMENT ENDPOINTS
   # ===================
   /api/v2/Documents:
     get:
@@ -916,16 +1169,29 @@ paths:
       operationId: get_user_documents
       summary: Get documents for a user with extracted features
       description: |
-        Uploaded documents with download URL, category, lab provider, observation date,
-        extraction status, and the AI-extracted features. Use for "what did the lab
-        report she uploaded say?".
+        Returns documents on a user's file, including name, type, tags, and dates.
 
-        Returns a plain list, not a page. The approved / pending / rejected feature
-        counts tell you whether extraction is still under human review.
+        Use to find documents associated with a person.
 
-        `SelectedUserId` and `RequestingUserId` must be Arii user IDs. Call
-        `get_current_user` first and use its `id` as `RequestingUserId` (and as
-        `SelectedUserId` when reading your own documents).
+        Each row carries a `downloadUrl`, the extraction status, and counts of extracted
+        features by review state — total, approved, pending and rejected. Those counts say
+        whether extraction is still under human review.
+
+        Does not return the document's contents, and does not return the extracted values
+        themselves — only how many there are. It cannot be used to quote or interpret a
+        report. To read a lab's numbers use the marker tools.
+
+        Returns a plain list, not a page.
+
+        The document owner is selected with `selectedUserId`.
+
+        `documentId` is the only filter this read applies. There is no category, type or
+        provider filter: everything on the person's file comes back and any narrowing is
+        yours to do on the returned rows. Judge a document by its own fields rather than
+        assuming the set was filtered.
+
+        Omit `RequestingUserId`. The caller is resolved from the session and any value sent
+        here is discarded.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -934,16 +1200,16 @@ paths:
           in: query
           required: true
           description: |
-            Arii user ID whose documents to retrieve. For self, use
-            `get_current_user`.id. Not an Airia profile ID.
+            Arii user ID whose documents to retrieve. Not an Airia profile ID.
           schema:
             type: string
             format: uuid
         - name: RequestingUserId
           in: query
           description: |
-            Arii user ID of the caller for permission checks. **Call `get_current_user`
-            and pass its returned `id`.**
+            Optional, and best omitted. The caller is resolved from the authenticated
+            session and whatever is sent here is discarded, so calling `get_current_user`
+            to fill it is a wasted round trip.
           schema:
             type: string
             format: uuid
@@ -957,15 +1223,22 @@ paths:
         "200":
           description: Documents with extracted features
 
+  # ===================
+  # SYMPTOM ENDPOINTS
+  # ===================
   /api/v1/symptoms:
     get:
       tags: [Symptoms]
       operationId: list_symptoms
       summary: List all available symptoms
       description: |
-        The catalog of trackable symptoms. Resolve a symptom here before reading or
-        logging one, since the log body embeds the whole symptom object rather than
-        a name.
+        Returns the platform's supported symptom catalog, including each symptom's
+        canonical ID and name.
+
+        Use to resolve symptom IDs and canonical names when interpreting the symptoms a
+        person has recorded, for example the entries returned by `get_user_symptom_details`.
+
+        This catalog is not patient-specific.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -979,155 +1252,109 @@ paths:
       operationId: get_user_symptom_details
       summary: Get symptom details for a user
       description: |
-        Logged symptoms with intensity, duration, notes, images, and an optional body
-        drawing, over an optional date range.
+        Returns symptoms recorded by a user, including symptom, intensity, start date, and
+        end date.
 
-        `requestingUserId` is required, not optional. There is no frequency field.
-        Intensity and duration are what gets recorded.
+        A missing end date means the symptom is still active.
 
-        Path `userId` must be an Arii user ID. For self, use `get_current_user`.id as
-        both path `userId` and `requestingUserId`.
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity, and omitting it there returns 400 "RequestingUserId parameter is
+        required."
+
+        Dates must be UTC timestamps such as `2026-08-28T00:00:00Z`. A bare calendar date
+        returns 400.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID whose symptom details to retrieve. For self, use
-            `get_current_user`.id.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
         - name: startDate
           in: query
-          description: Filter start date (ISO 8601).
+          description: Filter start date. UTC RFC3339 with a trailing `Z`; a bare date returns 400.
           schema:
             type: string
             format: date-time
         - name: endDate
           in: query
-          description: Filter end date (ISO 8601).
+          description: Filter end date. UTC RFC3339 with a trailing `Z`; a bare date returns 400.
           schema:
             type: string
             format: date-time
       responses:
         "200":
           description: User symptom details
-    post:
-      tags: [Symptoms]
-      operationId: create_user_symptom_details
-      summary: Create symptom details for a user
-      description: |
-        Logs one or more symptoms. The body is a JSON **array**, and each item needs
-        the symptom object, an intensity, and a start date; duration, notes, and
-        images are optional. Call only when the user asked for something to be logged.
-
-        `requestingUserId` is a required query parameter, separate from the path
-        `userId`. Resolve the symptom with `list_symptoms` first. The body embeds the
-        whole symptom object, not just a name.
-      x-mcp-annotations:
-        readOnlyHint: false
-        idempotentHint: false
-      parameters:
-        - $ref: "#/components/parameters/AriiUserIdPath"
-        - name: requestingUserId
-          in: query
-          description: |
-            Arii user ID of the caller, used for authorization scoping. **Call
-            `get_current_user` and pass its returned `id`.** Not an Airia profile ID.
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              description: |
-                JSON array of symptom detail objects. Example:
-                [{"symptom":{"name":"Headache"},"intensity":5,"startDate":"2026-07-20T00:00:00Z","notes":"..."}]
-              items:
-                type: object
-                required: [symptom, intensity, startDate]
-                properties:
-                  symptom:
-                    type: object
-                    description: Symptom reference — include id and/or name from list_symptoms.
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                        description: Symptom catalog ID (GUID), if known.
-                      name:
-                        type: string
-                        description: Symptom name.
-                      category:
-                        type: string
-                        description: Symptom category.
-                  intensity:
-                    type: integer
-                    minimum: 0
-                    maximum: 10
-                    description: Intensity on a 0-10 scale.
-                  startDate:
-                    type: string
-                    format: date-time
-                    description: When the symptom started (ISO 8601).
-                  notes:
-                    type: string
-                    description: Optional notes (max 500 chars).
-                  images:
-                    type: array
-                    items:
-                      type: string
-                    description: Optional base64-encoded images.
-      responses:
-        "201":
-          description: Created symptom details
 
   # ===================
-  # MARKER ENDPOINTS (v2)
+  # MARKER ENDPOINTS
   # ===================
   /api/v2/Marker/summary/{userId}:
     get:
       tags: [Markers]
       operationId: get_marker_summary
-      summary: Get health marker summary for a user
+      summary: Get the latest value for each marker in a window
       description: |
-        Latest value per biomarker over a date window, each with unit, reference
-        range, display precision, data source, and **the patient's goal for that
-        marker inline**. The default read for "what are her current numbers?",
-        **"how are my lipids?"**, and "is she hitting her target?".
+        Returns the latest value for each marker in a requested time window, including
+        marker ID, name, value, unit, record date, category, and the user's goal for that
+        marker.
 
-        Requires `requestingUserId`. Dates are `recordStartDate`/`recordEndDate` as
-        `YYYY-MM-DD`. Narrow with `specificMarkers` (marker type IDs from
-        `get_user_marker_types_with_data` or `bulk_search_marker_types`). A returned
-        value may have been carried forward from up to a year earlier.
+        Each row carries two identifiers, adjacent and easy to confuse. `markerTypeId` is
+        the marker type, and is what `specificMarkers` takes on this and every other marker
+        tool. `id` is the summary row's own id and matches nothing anywhere else: sent as
+        `specificMarkers` it returns an empty result rather than an error (AIP-236).
 
-        Lipids flow: `get_user_marker_types_with_data` -> filter category **"Lipids &
-        Cardiovascular Risk"** (and name/alias match for uncategorized advanced lipids)
-        -> this tool with those ids in `specificMarkers`. One flat row per marker, not
-        one row per sample.
+        Category appears three ways on a row. `category` is a coarse quantity-type enum,
+        while `categoryId` and `categoryName` are the resolved `arii.Categories` values.
+        Match on `categoryName`, never on `category`.
 
-        Both path `userId` and `requestingUserId` must be Arii user IDs. Call
-        `get_current_user` first. Provider reads need `X-Access-Context: group`.
+        Use for current/latest marker values or a named panel of marker results.
+
+        On a populated chart this returns one row per marker type, thirty-one fields each,
+        with no page size to bound it — enough to exhaust the model's context before it can
+        answer (AIP-297). For an open question such as "how am I doing", call
+        `get_marker_summary_compact` instead. Use this tool when a named panel needs fields
+        the compact row drops — above all `goal`, which makes this the read for "is she
+        hitting her target".
+
+        `goal` is the target for that marker, and `goalIsDefault` says whether it is one the
+        person set or a platform default such as the 10,000-step goal. Do not describe a
+        default as a goal they chose.
+
+        Scope the call with `specificMarkers`, a list of marker type IDs from
+        `get_user_marker_types_with_data` — or from `bulk_search_marker_types` when that list
+        had no match. Without it the tool returns every marker the person has, with no page
+        size to bound the response.
+
+        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
+        either returns 400. There is no named window such as `ThirtyDays`; pass the dates.
+
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
+
+        If a marker has no reading in the requested window, the tool may return its most
+        recent value from up to one year earlier. Always use the returned `recordDate`; do
+        not describe a carried-forward value as current. Nothing on the row flags that it
+        happened (AIP-237).
+
+        Does not return reference ranges. For a patient-specific range use
+        `get_observation_samples`.
+
+        On a share-based read the start date may be narrowed to the share's own window, so
+        the range covered can be shorter than the one you asked for, with nothing on the
+        response saying so. Read the returned dates rather than assuming your range held.
+
+        If this read fails, say you could not retrieve the data. A failure is never
+        evidence that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID whose markers to summarize. For self, use `get_current_user`.id.
-            For a patient, use their Arii user ID — not an Airia profile ID.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
         - name: recordStartDate
           in: query
@@ -1149,7 +1376,10 @@ paths:
             format: date
         - name: specificMarkers
           in: query
-          description: Optional list of marker type IDs (GUIDs) to filter to. Must be non-empty if provided.
+          description: |
+            Marker type IDs (GUIDs) from `get_user_marker_types_with_data`, or from
+            `bulk_search_marker_types` when that list had no match. Copy each exactly as
+            returned. Without this the tool returns every marker the person has.
           schema:
             type: array
             items:
@@ -1159,62 +1389,121 @@ paths:
         "200":
           description: Marker summary data
 
-  /api/v2/Marker/averages/{userId}:
+  /api/v2/Marker/summary-compact/{userId}:
     get:
       tags: [Markers]
-      operationId: get_marker_averages
-      summary: Get health marker averages for a user
+      operationId: get_marker_summary_compact
+      summary: Get a context-sized page of a user's current marker values
       description: |
-        Paged averages per marker type: daily, weekday and weekend means, highest
-        single day, high and low range, plus per-day logs and chart points. Use for
-        trends and period comparisons.
+        Returns a user's current marker values on a row trimmed to twelve fields and
+        bounded by a page, together with the category counts for the whole window.
 
-        Requires `requestingUserId`; `pageSize` defaults to 20. The goal value is
-        included here too, so "on track?" needs no separate goal call. Dates are
-        `recordStartDate`/`recordEndDate` as `YYYY-MM-DD`.
+        It reads the same underlying values as `get_marker_summary`, but the two do not
+        return the same set by default: `skipFallbackData` is `true` here and `false` there,
+        so markers whose only value would be carried forward from before the window appear
+        in the full summary and not in this one.
 
-        Both path `userId` and `requestingUserId` must be Arii user IDs. Call
-        `get_current_user` first. Provider reads need `X-Access-Context: group`.
+        **This is the default read for an open question about how someone is doing.** The
+        full summary returns one row per marker type with thirty-one fields each and no page
+        size; on a populated chart that exhausts the model's context before it can answer,
+        and the person gets an empty reply (AIP-297). Use `get_marker_summary` only when a
+        named panel needs fields this row does not carry.
+
+        Each row has `markerTypeId`, `displayName`, `value`, `unit`, `recordDate`,
+        `categoryName`, `dataSourceName`, `aggregationMethod`, and — where a reference range
+        applies — `rangeStatus` and `outOfRange`. `secondValue` and `textValue` carry
+        blood-pressure style pairs and non-numeric results.
+
+        It carries **no goal**. For "is she hitting her target", use `get_marker_summary`
+        scoped with `specificMarkers`; its rows have `goal` inline. Do not read a missing
+        goal here as the person not having one.
+
+        `select=Abnormal` filters on the server, across every marker in the window, to
+        values outside their own reference range. Prefer it for "how am I doing": it answers
+        over the whole chart in a handful of rows, where paging through `All` answers over
+        whatever fraction you managed to read.
+
+        Rows come back most recent first, so a partial page is the newest readings rather
+        than an arbitrary slice — unlike `get_marker_averages`, which pages by marker type
+        ID. `pageSize` above 200 returns 400 rather than being clamped.
+
+        `categoryFacets` counts markers per category across the whole window and carries the
+        `categoryId` to filter by. Facets are counted before `categoryId` is applied, so they
+        keep describing the window rather than the filtered page. This is the one place a
+        category filter works on a name you can read — `categoryName` here is resolved, not
+        the numeric id that `get_user_marker_types_with_data` returns.
+
+        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
+        either returns 400.
+
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
+
+        `specificMarkers` is optional here; without it you get the whole window, which is
+        what the paging and `select` are for. Entries that are unparseable or resolve to no
+        marker type are skipped and returned in `unmatchedIds` (AIP-236); the call is
+        rejected only when no entry parses at all.
+
+        `skipFallbackData` defaults to **true** on this tool, unlike the other marker reads:
+        a value carried forward from before the window is noise when you asked what the
+        window holds. Markers that had only carried-forward data drop out entirely, so this
+        affects `totalCount` and the facets, not just values.
+
+        On a share-based read the start date may be narrowed to the share's own window, so
+        the range covered can be shorter than the one you asked for, with nothing on the
+        response saying so. Read the returned dates rather than assuming your range held.
+
+        If this read fails, say you could not retrieve the data. A failure is never evidence
+        that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID whose marker averages to fetch. For self, use
-            `get_current_user`.id. Not an Airia profile ID.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
         - name: recordStartDate
           in: query
           required: true
-          description: |
-            Start date as a local calendar date (YYYY-MM-DD). Required together with
-            recordEndDate — the API returns 400 if either is omitted.
+          description: Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
           required: true
-          description: |
-            End date as a local calendar date (YYYY-MM-DD). Required together with
-            recordStartDate — the API returns 400 if either is omitted.
+          description: End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.
           schema:
             type: string
             format: date
         - name: specificMarkers
           in: query
-          description: Optional list of marker type IDs (GUIDs) to filter to. Must be non-empty if provided.
+          description: |
+            Optional marker type IDs to restrict the page to — the `markerTypeId` field of a
+            row, not its `id`. Bound as strings rather than GUIDs on purpose: unparseable or
+            unknown entries are skipped and returned in `unmatchedIds` instead of failing
+            the call.
           schema:
             type: array
             items:
               type: string
-              format: uuid
+        - name: categoryId
+          in: query
+          description: |
+            Restrict rows to one category, using a `categoryId` taken from `categoryFacets`
+            on an unfiltered call. This is a numeric id, not a category name.
+          schema:
+            type: integer
+        - name: select
+          in: query
+          description: |
+            `All` (default) returns every marker with a value in the window. `Abnormal`
+            returns only values outside their own reference range, filtered on the server
+            across the whole window.
+          schema:
+            type: string
+            enum: [All, Abnormal]
+            default: All
         - name: pageNumber
           in: query
           description: Zero-based page number (default 0).
@@ -1223,15 +1512,148 @@ paths:
             default: 0
         - name: pageSize
           in: query
-          description: Number of marker types per page (default 20).
+          description: Marker types per page (default 50, maximum 200).
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: skipFallbackData
+          in: query
+          description: |
+            Defaults to **true** here, unlike the other marker reads: markers whose only
+            value would be carried forward from before the window are dropped. Pass `false`
+            to include them, and then read `recordDate` before calling a value current.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: One page of compact marker rows, with the window's totals and category facets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedMarkerSummaryCompact"
+        "400":
+          description: recordStartDate/recordEndDate missing, or specificMarkers contained no valid marker type IDs
+        "403":
+          description: Requester is not permitted to read this user's markers
+
+  /api/v2/Marker/averages/{userId}:
+    get:
+      tags: [Markers]
+      operationId: get_marker_averages
+      summary: Get marker trends over a window
+      description: |
+        Returns trends for specific markers over a time window, including daily averages,
+        per-day values, weekday/weekend averages, highs, lows, and individual log readings.
+
+        Use for trends and statistical analysis of named markers.
+
+        First get the patient's markers with `get_user_marker_types_with_data` — falling back
+        to `bulk_search_marker_types` when nothing there matches — then pass those marker type
+        IDs as `specificMarkers`. Avoid unscoped calls because they can return every
+        marker and its full logs — roughly 11,800 log entries for one patient over 90 days,
+        which no page size fixes (AIP-236).
+
+        `specificMarkers` takes marker type IDs — the `markerTypeId` field of a
+        `get_marker_summary` row, not that row's own `id`. Copy each one exactly as
+        returned.
+
+        Entries that are unparseable, or that resolve to no marker type, are skipped rather
+        than failing the call, and come back in `unmatchedIds`. Read that field: a short
+        result with entries listed there means you sent the wrong ids, which is not the same
+        as the patient having no data. The call is rejected only when no entry parses at
+        all (AIP-236).
+
+        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
+        either returns 400.
+
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
+
+        `pageNumber` is 0-based and `pageSize` is 1-100, default 20. Pages are ordered by
+        marker type ID, so a partial page is not necessarily the most relevant subset.
+
+        `skipFallbackData` defaults to false, so a marker with no reading in the window may
+        be filled from up to a year earlier. Always use the returned dates; do not describe
+        a carried-forward value as current. Pass `true` to exclude them — a marker that had
+        only carried-forward data then drops out of the result entirely, which changes
+        `totalCount` and the paging, not just the values.
+
+        `useWeeklyAggregation` controls chart bucketing. Omit it for the 90-day threshold,
+        `true` for weekly buckets, `false` for daily.
+
+        Each log may contain `metaData.referenceRange`. This is the range printed on the lab
+        report in the reading's stored unit. Report it as stored rather than treating it as
+        a patient-specific range or comparing converted values to it (AIP-238).
+
+        On a share-based read the start date may be narrowed to the share's own window, so
+        the range covered can be shorter than the one you asked for, with nothing on the
+        response saying so. Read the returned dates rather than assuming your range held.
+
+        If this read fails, say you could not retrieve the data. A failure is never evidence
+        that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: recordStartDate
+          in: query
+          required: true
+          description: Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          required: true
+          description: End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.
+          schema:
+            type: string
+            format: date
+        - name: specificMarkers
+          in: query
+          description: |
+            Marker type IDs from `get_user_marker_types_with_data`, or from
+            `bulk_search_marker_types` when that list had no match. **Always send these.**
+            An unscoped call returns every marker with its full logs.
+
+            Bound as strings rather than GUIDs on purpose: one malformed entry no longer
+            rejects the whole call. Unparseable or unknown entries are skipped and returned
+            in `unmatchedIds` (AIP-236).
+          schema:
+            type: array
+            items:
+              type: string
+        - name: pageNumber
+          in: query
+          description: Zero-based page number (default 0).
+          schema:
+            type: integer
+            default: 0
+        - name: pageSize
+          in: query
+          description: Marker types per page (1-100, default 20).
           schema:
             type: integer
             default: 20
+        - name: skipFallbackData
+          in: query
+          description: |
+            Default false, so markers with no reading in the window may be filled from up to
+            a year earlier. `true` drops those markers entirely, changing `totalCount` and
+            the paging as well as the values.
+          schema:
+            type: boolean
+            default: false
         - name: useWeeklyAggregation
           in: query
           description: |
-            Optional override for weekly vs daily chart bucketing. Omit to use the
-            default (~90-day threshold decides bucketing automatically).
+            Chart bucketing. Omit for the ~90-day threshold, `true` for weekly buckets,
+            `false` for daily.
           schema:
             type: boolean
       responses:
@@ -1242,52 +1664,55 @@ paths:
     get:
       tags: [Markers]
       operationId: get_marker_samples
-      summary: Get raw marker samples for a user
+      summary: Get individual readings for a marker
       description: |
-        Individual measurements with value, unit, source, timestamps, and tags, paged
-        100 at a time. Use when averages are too coarse: one specific reading, or
-        variation within a single day.
+        Returns individual readings for a marker over a date range, including value, unit,
+        record date, and source.
 
-        Requires `recordStartDate`/`recordEndDate` (`YYYY-MM-DD`). Unlike summary and
-        averages it takes no `requestingUserId`, so cross-user access rides on
-        `X-Access-Context` alone.
+        Use for the individual historical readings of a marker.
 
-        Path `userId` must be an Arii user ID. For raw sample history prefer
-        `specificMarkers` to limit payload size.
+        Scope the call with `specificMarkers`, a list of marker type IDs from
+        `get_user_marker_types_with_data` — or from `bulk_search_marker_types` when that list
+        had no match. Without it the tool returns every marker the person has.
+
+        Both `recordStartDate` and `recordEndDate` are required in `yyyy-MM-dd` format.
+        Omitting either returns 400.
+
+        Use `hasNextPage` for paging. `totalCount` and `totalPages` are always 1.
+
+        `metaData.referenceRange` is the range printed on the lab report in the reading's
+        stored unit.
+
+        On a share-based read the start date may be narrowed to the share's own window, so
+        the range covered can be shorter than the one you asked for, with nothing on the
+        response saying so. Read the returned dates rather than assuming your range held.
+
+        If this read fails, say you could not retrieve the data. A failure is never evidence
+        that the person has none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
-          description: |
-            Arii user ID whose samples to fetch. For self, use `get_current_user`.id.
-            Not an Airia profile ID.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/AriiUserIdPath"
         - name: recordStartDate
           in: query
           required: true
-          description: |
-            Start date as a local calendar date (YYYY-MM-DD). Required together with
-            recordEndDate — the API returns 400 if either is omitted.
+          description: Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
           required: true
-          description: |
-            End date as a local calendar date (YYYY-MM-DD). Required together with
-            recordStartDate — the API returns 400 if either is omitted.
+          description: End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.
           schema:
             type: string
             format: date
         - name: specificMarkers
           in: query
-          description: Optional list of marker type IDs (GUIDs) to filter to. Must be non-empty if provided.
+          description: |
+            Marker type IDs (GUIDs) from `get_user_marker_types_with_data`, or from
+            `bulk_search_marker_types` when that list had no match. Copy each exactly as returned.
           schema:
             type: array
             items:
@@ -1301,48 +1726,104 @@ paths:
             default: 0
         - name: pageSize
           in: query
-          description: Number of samples per page, 1-1000 (default 100).
+          description: Samples per page, 1-1000 (default 100). Outside that range returns 400.
           schema:
             type: integer
             default: 100
+        - name: filterRawSamples
+          in: query
+          description: |
+            Restrict the result to samples tagged `raw-sample`. Default false, which applies
+            no tag filter.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
-          description: Paginated raw marker samples
+          description: Paginated raw marker samples. Page with `hasNextPage`; the totals are always 1.
 
   # ===================
-  # NOTE CATEGORY ENDPOINTS
+  # MARKER TYPE ENDPOINTS
   # ===================
-  /api/v1/note-categories:
-    get:
-      tags: [Notes]
-      operationId: list_note_categories
-      summary: List all note categories
+  /api/v2/MarkerType/lookup:
+    post:
+      tags: [MarkerTypes]
+      operationId: bulk_search_marker_types
+      summary: Resolve marker names to marker type IDs
       description: |
-        The category vocabulary notes can be filed under. Use it to turn a category
-        name into the value `list_notes` expects.
+        Resolves marker names to marker type IDs.
+
+        Use when you have a marker name and need its ID before calling another marker tool.
+
+        Supports up to 200 keywords. Matching is case-insensitive substring matching against
+        names, aliases, and lab component names. It is not fuzzy matching and does not apply
+        synonyms.
+
+        Use the clinical marker name rather than the user's wording when possible: `my sugar`
+        matches nothing where `glucose` and `hba1c` do; `bp` returns IGFBP-3, so send
+        `blood pressure`. A device is not a marker — "my rings" is an Oura ring, whose
+        markers are Readiness Score and Sleep Score. Send every candidate form in the one
+        call; keywords cost nothing and a marker you fail to find costs the answer.
+
+        If the same marker name exists for different specimens, the results distinguish them
+        by type — `Ferritin` is both Serum and Blood, `Glucose` both Blood and Urine. Pick
+        the specimen the question implies.
+
+        Results are keyed by the keyword you sent. An empty array for a keyword means the
+        catalog has no such marker — it does not mean the patient has no data for it. Do not
+        report absence from this tool.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                  description: Search keywords (up to 200). Send every form the question needs in one call.
+                tenantId:
+                  type: string
+                  format: uuid
+                  description: Optional tenant/group ID (GUID) to filter by.
+                includeDefault:
+                  type: boolean
+                  description: Whether to include default (null tenant) marker types.
       responses:
         "200":
-          description: List of note categories
+          description: Marker types grouped by keyword
 
-  # ===================
-  # MARKER TYPE ENDPOINTS (v2)
-  # ===================
   /api/v2/MarkerType:
     get:
       tags: [MarkerTypes]
       operationId: list_marker_types
       summary: List marker types with filtering and pagination
       description: |
-        Paged marker definitions with SI and conventional units, conversion factor,
-        acceptable units, LOINC and SNOMED codes, display precision, and system
-        reference ranges. The read for "what is the normal range for ApoB?".
+        Returns the platform marker catalog with search and paging, including marker name,
+        aliases, unit, display precision, category, and system reference ranges.
 
-        `pageSize` defaults to 10. Filter with `search`, `name`, `category`, `tags`,
-        or `labProvider` rather than paging through. To resolve a named metric to an
-        ID, prefer `bulk_search_marker_types`.
+        Use when you need to search or inspect marker definitions, including the question
+        "what is the normal range for this marker?".
+
+        Filter with `search`, `name`, `tags` or `labProvider` rather than paging through
+        the catalog.
+
+        `category` here is the same numeric category id that `get_user_marker_types_with_data`
+        returns, stored as text — not a display name. Sending "Lipids & Cardiovascular Risk"
+        matches nothing and returns an empty page, which is not the same as the catalog
+        having no such markers. Filter by `name`, `search` or `tags` instead.
+
+        The `systemReferenceRanges` are platform-level ranges, not patient-specific ranges.
+        Do not use them to determine whether a patient's result is normal, and when nothing
+        comes back say the range is not on record rather than supplying one from general
+        knowledge.
+
+        `pageNumber` is 0-based and `pageSize` is 1-100, default 10.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -1359,7 +1840,10 @@ paths:
             type: string
         - name: category
           in: query
-          description: Exact category filter.
+          description: |
+            Exact match on the marker type's category **id stored as text** (e.g. "7"), not
+            a display name. Prefer `name`, `search` or `tags` unless you already hold a
+            numeric category id.
           schema:
             type: string
         - name: tenantId
@@ -1377,9 +1861,8 @@ paths:
         - name: withQuantityType
           in: query
           description: |
-            Optional filter on whether QuantityType is set. true = only marker types
-            with a non-null QuantityType; false = only marker types where QuantityType
-            is null; omit to return both.
+            Filter on whether QuantityType is set. true = only non-null; false = only null;
+            omit to return both.
           schema:
             type: boolean
         - name: tags
@@ -1414,81 +1897,13 @@ paths:
             default: 0
         - name: pageSize
           in: query
-          description: Page size (default 10).
+          description: Page size (1-100, default 10).
           schema:
             type: integer
             default: 10
       responses:
         "200":
           description: Paginated marker types
-  /api/v2/MarkerType/lookup:
-    get:
-      tags: [MarkerTypes]
-      operationId: lookup_marker_types
-      summary: Dump the entire marker type catalog (minimal fields)
-      description: |
-        Returns the whole marker-type lookup table (every id, name, alternate name,
-        and category) with no filter and no paging. Only for "what metrics exist at
-        all?".
-
-        Takes only `tenantId` and `includeDefault`. Roughly 2,400 entries. Use
-        `bulk_search_marker_types` to resolve a named metric.
-      x-mcp-annotations:
-        readOnlyHint: true
-        idempotentHint: true
-      parameters:
-        - name: tenantId
-          in: query
-          description: Optional tenant/group ID (GUID) to filter by.
-          schema:
-            type: string
-            format: uuid
-        - name: includeDefault
-          in: query
-          description: If true, also include system marker types with no tenantId. Default true.
-          schema:
-            type: boolean
-            default: true
-      responses:
-        "200":
-          description: List of marker types (minimal fields)
-    post:
-      tags: [MarkerTypes]
-      operationId: bulk_search_marker_types
-      summary: Resolve marker names to marker type IDs (preferred lookup)
-      description: |
-        Takes a list of keywords and returns matching marker types grouped per
-        keyword, each with id, canonical name, alternate names, and category. Run it
-        once with every metric named in the question, then pass the ids to the Marker
-        tools.
-
-        The response is keyed by your keyword, so an empty array for one keyword means
-        that metric is unknown to the catalog, not that the patient has no data for it.
-      x-mcp-annotations:
-        readOnlyHint: true
-        idempotentHint: true
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                keywords:
-                  type: array
-                  items:
-                    type: string
-                  description: Search keywords to look up marker types for.
-                tenantId:
-                  type: string
-                  format: uuid
-                  description: Optional tenant/group ID (GUID) to filter by.
-                includeDefault:
-                  type: boolean
-                  description: Whether to include default (null tenant) marker types.
-      responses:
-        "200":
-          description: Marker types grouped by keyword
 
   /api/v2/MarkerType/{id}:
     get:
@@ -1496,8 +1911,18 @@ paths:
       operationId: get_marker_type
       summary: Get a marker type by ID
       description: |
-        One marker definition with its units, conversion factor, clinical codes, and
-        reference ranges.
+        Returns one marker definition by ID, including name, aliases, SI and conventional
+        units, the conversion factor between them, LOINC and SNOMED codes, display
+        precision, category, and system reference ranges.
+
+        Use when you already have a marker type ID and need its definition, unit, or display
+        precision.
+
+        Does not return patient values.
+
+        For searching by name, use `list_marker_types` or `bulk_search_marker_types`.
+
+        `systemReferenceRanges` are platform-level ranges, not patient-specific ranges.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -1514,7 +1939,7 @@ paths:
           description: Marker type details
 
   # ===================
-  # DATA DICTIONARY ENDPOINTS (v2)
+  # DATA DICTIONARY ENDPOINTS
   # ===================
   /api/v2/Users/{userId}/DataDictionary/MarkerTypes:
     get:
@@ -1522,46 +1947,59 @@ paths:
       operationId: get_user_marker_types_with_data
       summary: List marker types a user has data for
       description: |
-        The marker types this patient actually has samples for, each with id, name,
-        category, unit, and aliases. **Step 1 for lipids and current lab values:**
-        filter here (e.g. `category` == "Lipids & Cardiovascular Risk", plus
-        name/alias match for advanced lipid markers with blank category), then pass
-        the ids to `get_marker_summary` as `specificMarkers`.
+        Returns the marker types that have at least one sample in the user's complete
+        history.
 
-        Names only: no values and no ranges. Results include marker types the
-        dashboard may hide. Path `userId` must be an Arii user ID. Provider reads
-        need `X-Access-Context: group`.
+        **Call this first, before any other marker read, for the patient the question is
+        about.** It is the only tool that says which markers this person actually has, so it
+        is what turns a name in a question into an id you can safely ask for. It applies to a
+        patient you are reading as a clinician exactly as it does to yourself: access is
+        resolved from who is asking, and no header is involved.
+
+        Marker types only — no values, no dates, no ranges — and it covers the person's whole
+        history, so a marker here may still have no reading in the window you go on to ask
+        about. Its `category` is a numeric id rather than a name; match on `name` and
+        `aliases`.
+
+        A marker absent from this list is not recorded for this patient, and saying so needs
+        no further call. A 403 is an access problem and never an absence.
+
+        Then read what the question calls for, scoped to these ids with `specificMarkers`:
+        `get_marker_summary` for current values, `get_marker_averages` for a trend,
+        `get_marker_samples` for individual readings, `get_observation_samples` for whether a
+        result is normal for this person.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
       parameters:
-        - name: userId
-          in: path
-          required: true
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: excludeSkipDailyAggregations
+          in: query
           description: |
-            Arii user ID whose data dictionary to query. For self, use
-            `get_current_user`.id. Not an Airia profile ID.
+            When true, drop marker types whose only samples carry the
+            `skip-daily-aggregations` tag — activity-derived device samples not meant for
+            daily display. Default false, which returns everything the person has.
           schema:
-            type: string
-            format: uuid
+            type: boolean
+            default: false
       responses:
         "200":
           description: Marker types the user has data for
+        "403":
+          description: Requester is not permitted to read this user's data dictionary
 
 components:
   parameters:
     # Canonical Arii user-ID parameters. Kept here so the ID-kind guidance has a
-    # single source of truth instead of drifting across ~30 inline copies.
-    # Endpoints whose ID has narrower meaning (e.g. a patient rather than the
-    # caller) keep their own inline description.
+    # single source of truth instead of drifting across inline copies.
     AriiUserIdPath:
       name: userId
       in: path
       required: true
       description: |
-        Arii user ID (`UserDto.id` GUID) this operation applies to. For yourself, use
-        `get_current_user`.id; for another user, their Arii ID from execution context.
-        Never an Airia profile ID, Keycloak `sub`, or group ID: those return 404
+        Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the
+        read, from execution context. Never the requester's own id on a clinician turn,
+        and never an Airia profile ID, Keycloak `sub`, or group ID: those return 404
         "No user found" under Bearer auth.
       schema:
         type: string
@@ -1569,11 +2007,12 @@ components:
     AriiRequestingUserIdQuery:
       name: requestingUserId
       in: query
-      required: true
       description: |
-        Arii user ID of the authenticated caller, used for authorization scoping.
-        **Call `get_current_user` and pass its returned `id`.** Not an Airia
-        profile ID and not a Keycloak `sub`.
+        Optional, and best omitted. The API resolves the requester from the authenticated
+        session and discards whatever is sent here, so calling `get_current_user` just to
+        fill it is a wasted round trip and a chance to send the wrong id (AIP-245). It is
+        honoured only on the legacy `X-API-Key` path. If you do send it, it is the caller's
+        own Arii user ID — never the patient's, an Airia profile ID, or a Keycloak `sub`.
       schema:
         type: string
         format: uuid
@@ -1589,14 +2028,15 @@ components:
           type: string
           format: uuid
           description: |
-            Arii user ID of the authenticated caller. Reuse this as `userId` /
-            `requestingUserId` / `RequestingUserId` on subsequent Bearer tool calls.
+            Arii user ID of the authenticated caller — never the `userId` of a patient data
+            read. Reads resolve the caller from the session, so this does not need to be
+            passed on to them.
         airiaProfileId:
           type: string
           format: uuid
           description: |
             Airia Platform profile ID for correlation only — not valid as Bearer path
-            `userId` (profile → Arii translation is API Key only).
+            `userId` (profile to Arii translation is API Key only).
         email:
           type: string
           description: Caller's email address
@@ -1628,10 +2068,8 @@ components:
           type: string
           format: uuid
           description: |
-            Linked Airia Platform profile ID. Correlation only — never substitute
-            this value for Arii `userId` parameters when using Bearer/passthrough
-            (API Key auth may auto-translate on some older endpoints; do not rely
-            on that for MCP passthrough).
+            Linked Airia Platform profile ID. Correlation only — never substitute this
+            value for Arii `userId` parameters under Bearer/passthrough.
         firstName:
           type: string
           description: First name
@@ -1651,270 +2089,23 @@ components:
           type: string
           format: uuid
           description: Active group/organization ID (not a user ID)
-
-    UserPreferencesDto:
-      type: object
-      description: |
-        User profile preferences and demographics. Enums are serialized as integers.
-        `dateOfBirth` is a calendar date `YYYY-MM-DD` (no time component).
-      properties:
-        userId:
+        imageBase64:
           type: string
-          format: uuid
-          description: Arii user ID this preference record belongs to
-        firstName:
-          type: string
-          nullable: true
-        middleName:
-          type: string
-          nullable: true
-        lastName:
-          type: string
-          nullable: true
-        name:
-          type: string
-          nullable: true
-          description: Deprecated full name; prefer firstName/middleName/lastName
-        aboutMe:
-          type: string
-          nullable: true
-          description: Free-text "about me" written by the user (max 800 chars)
-        sex:
-          type: integer
-          enum: [0, 1, 2]
-          description: "Biological sex: 0=Male, 1=Female, 2=Other"
-        dateOfBirth:
-          type: string
-          format: date
-          nullable: true
-          description: Date of birth as `YYYY-MM-DD`
-        height:
-          type: number
-          nullable: true
-          description: Height in `heightUnit`
-        heightUnit:
-          type: string
-          nullable: true
-          description: Unit for `height` (e.g. `cm`, `in`)
-        weight:
-          type: number
-          nullable: true
-          description: Weight in `weightUnit`
-        weightUnit:
-          type: string
-          nullable: true
-          description: Unit for `weight` (e.g. `kg`, `lb`)
-        phone:
-          type: string
-          nullable: true
-        useMetricSystem:
-          type: boolean
-          description: True if the user prefers metric units
-        timeZoneIdentifier:
-          type: string
-          description: IANA time zone (e.g. `America/New_York`). Use it when interpreting local dates.
-        preferredDataSource:
-          type: integer
-          description: |
-            Preferred health data source: 0=Arii, 1=Fitbit, 2=Oura, 3=Withings,
-            4=AppleHealth, 5=Garmin, 6=Whoop, 7=BioStrap, 8=Strava, 9=HealthConnect,
-            10=Elation, 11=FreeStyleLibre, 12=Cronometer, 13=Mira, 14=Dexcom, 15=Polar,
-            16=Omron, 17=HeartMath, 18=InBody, 19=Cerbo, 20=AdvancedMd, 21=OneUpHealth,
-            22=JunctionLabReport, 23=Kardia, 24=Peloton, 25=Healthie, 26=Athena,
-            27=HeadsUpV1, 28=HumanApi
-        preferredDataSourceName:
-          type: string
-          nullable: true
-          description: Human-readable preferred data source (e.g. `Fitbit`). Prefer this over the integer.
-        tone:
-          type: integer
-          description: |
-            Preferred AI response tone: 0=ConciseAndFormal, 1=ModerateAndFormal,
-            2=LengthyAndFormal, 3=ConciseAndBalanced, 4=ModerateAndBalanced,
-            5=LengthyAndBalanced, 6=ConciseAndCasual, 7=ModerateAndCasual, 8=LengthyAndCasual
-        isFollowUp:
-          type: boolean
-          description: Whether the user wants follow-up questions
-        shareLocation:
-          type: integer
-          description: "Location sharing: 0=AllowOnce, 1=AllowWhileUsingApp, 2=NotAllowed"
-        isShareAppleHealth:
-          type: boolean
-          nullable: true
-        isShareAppleHealthClinical:
-          type: boolean
-          nullable: true
-        onboardingFlow:
-          type: integer
-          nullable: true
-          description: "0=Provider, 1=TeamMember, 2=PatientViaInvitationToken, 3=PatientViaGroupCode, 4=StandalonePatient"
-        allergies:
-          type: array
-          nullable: true
-          description: Known allergies
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-              allergy:
-                type: integer
-                description: Allergy type enum (integer)
-              allergyName:
-                type: string
-                nullable: true
-                description: Human-readable allergy name
-              otherAllergies:
-                type: array
-                nullable: true
-                items:
-                  type: string
-              description:
-                type: string
-                nullable: true
-              source:
-                type: string
-                nullable: true
-        dietaryPreferences:
-          type: array
-          nullable: true
-          description: Dietary preferences / restrictions
-          items:
-            type: object
-            properties:
-              preference:
-                type: integer
-                description: Dietary preference enum (integer)
-              userDefinedPreferences:
-                type: array
-                nullable: true
-                items:
-                  type: string
-        goals:
-          type: array
-          nullable: true
-          description: Health goals selected by the user
-          items:
-            type: object
-            properties:
-              goalId:
-                type: string
-                format: uuid
-              name:
-                type: string
-              description:
-                type: string
-                nullable: true
-              userDefinedGoals:
-                type: array
-                nullable: true
-                items:
-                  type: string
-        preferredDrinkSizes:
-          type: array
-          items:
-            type: integer
-          description: Preferred drink sizes in `drinkSizeUnit`
-        drinkSizeUnit:
-          type: string
-        selectedDrinkSizeValue:
-          type: number
-          nullable: true
-        selectedDrinkSizeUnit:
-          type: string
-          nullable: true
-
-    ActivityDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Activity ID
-        activityName:
-          type: string
-          description: Name of the activity
-        durationMinutes:
-          type: integer
-          description: Duration in minutes
-        startTime:
+          description: Profile image. Despite the name, this holds a URL.
+        lastAppleHealthSyncTimestamp:
           type: string
           format: date-time
-          description: Start time
-        intensityLevel:
-          type: string
-          description: "Intensity: low, medium, or high"
-        estimatedCaloriesBurned:
-          type: integer
-          description: Estimated calories burned
-        userId:
-          type: string
-          format: uuid
           description: |
-            Arii user ID (`UserDto.id` GUID) of the user who performed the activity.
-            For yourself, use `get_current_user`.id. Never an Airia profile ID.
-        source:
-          type: string
-          description: "Data source (e.g., Garmin, Oura, Strava, Whoop)"
-
-    ActivityUpsertDto:
-      type: object
-      required: [activityName, durationMinutes, startTime, intensityLevel, estimatedCaloriesBurned, userId]
-      properties:
-        activityName:
-          type: string
-          description: Activity name
-        durationMinutes:
-          type: integer
-          description: Duration in minutes (minimum 1)
-          minimum: 1
-        startTime:
+            Last Apple Health sync. The only connector sync time that is ever populated —
+            a stale value explains missing recent readings.
+        lastGarminSyncTimestamp:
           type: string
           format: date-time
-          description: Start time (ISO 8601)
-        intensityLevel:
+          description: Always null. No code path writes it. Do not report it.
+        lastHealthConnectSyncTimestamp:
           type: string
-          description: "Must be: low, medium, or high"
-          enum: [low, medium, high]
-        estimatedCaloriesBurned:
-          type: integer
-          description: Estimated calories burned (minimum 0)
-          minimum: 0
-        userId:
-          type: string
-          format: uuid
-          description: |
-            Arii user ID (`UserDto.id` GUID) that this record belongs to. For yourself,
-            use `get_current_user`.id. Never an Airia profile ID (`airiaProfileId`) or
-            Keycloak `sub` — a wrong ID kind writes to the wrong record or 404s.
-
-    GoalDto:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Goal ID
-        name:
-          type: string
-          description: Goal display name
-        description:
-          type: string
-          description: Goal description
-
-    GoalUpsertDto:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-          description: Goal name (max 100 chars)
-          maxLength: 100
-        description:
-          type: string
-          description: Goal description (max 300 chars)
-          maxLength: 300
+          format: date-time
+          description: Always null. No code path writes it. Do not report it.
 
     JournalDto:
       type: object
@@ -1926,10 +2117,7 @@ components:
         userId:
           type: string
           format: uuid
-          description: |
-            Arii user ID (`UserDto.id` GUID) that this record belongs to. For yourself,
-            use `get_current_user`.id. Never an Airia profile ID (`airiaProfileId`) or
-            Keycloak `sub` — a wrong ID kind writes to the wrong record or 404s.
+          description: Arii user ID this entry belongs to.
         title:
           type: string
           description: Journal title
@@ -1951,28 +2139,6 @@ components:
         updatedAt:
           type: string
           format: date-time
-
-    JournalUpsertDto:
-      type: object
-      required: [userId, journalDate]
-      properties:
-        userId:
-          type: string
-          format: uuid
-          description: |
-            Arii user ID (`UserDto.id` GUID) that this record belongs to. For yourself,
-            use `get_current_user`.id. Never an Airia profile ID (`airiaProfileId`) or
-            Keycloak `sub` — a wrong ID kind writes to the wrong record or 404s.
-        title:
-          type: string
-          description: Journal title
-        content:
-          type: string
-          description: Journal content
-        journalDate:
-          type: string
-          format: date-time
-          description: Date of the journal event (ISO 8601)
 
     MealDto:
       type: object
@@ -2006,41 +2172,6 @@ components:
         servingUnitMetric:
           type: string
           description: Metric serving unit
-
-    MealUpsertDto:
-      type: object
-      properties:
-        name:
-          type: string
-          description: Meal name
-        description:
-          type: string
-          description: Meal description
-        date:
-          type: string
-          format: date-time
-          description: Meal date (ISO 8601)
-        portionSize:
-          type: integer
-          description: Number of servings
-        servingSizeImperial:
-          type: number
-          description: Imperial serving size
-        servingUnitImperial:
-          type: string
-          description: Imperial serving unit
-        servingSizeMetric:
-          type: number
-          description: Metric serving size
-        servingUnitMetric:
-          type: string
-          description: Metric serving unit
-        userIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: User IDs to associate with this meal
 
     NoteDto:
       type: object
@@ -2087,45 +2218,20 @@ components:
           items:
             type: string
           description: Category names
+        sharedBy:
+          type: string
+          format: uuid
+          description: Who shared the note (on `get_shared_notes` results).
+        sharedAt:
+          type: string
+          format: date-time
+          description: When the note was shared (on `get_shared_notes` results).
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-
-    NoteUpsertDto:
-      type: object
-      required: [tenantId, title, date]
-      properties:
-        tenantId:
-          type: string
-          format: uuid
-          description: Tenant/organization ID
-        noteTemplateId:
-          type: string
-          format: uuid
-          description: Template ID (if created from template)
-        title:
-          type: string
-          description: Note title (max 255 chars)
-          maxLength: 255
-        date:
-          type: string
-          format: date-time
-          description: Note date (ISO 8601)
-        content:
-          type: string
-          description: Note content
-        private:
-          type: boolean
-          description: Whether the note is private
-        patientIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: Patient IDs to associate
 
     PagedNotes:
       type: object
@@ -2165,8 +2271,8 @@ components:
           type: string
           format: date-time
           description: |
-            Observation date. List order is undocumented — sort by this field
-            descending to find the newest panel, and always report it with values.
+            Observation date. List order is undocumented — sort by this field descending
+            to find the newest panel, and always report it with values.
         startDate:
           type: string
           format: date-time
@@ -2182,10 +2288,7 @@ components:
         userId:
           type: string
           format: uuid
-          description: |
-            Arii user ID (`UserDto.id` GUID) that this record belongs to. For yourself,
-            use `get_current_user`.id. Never an Airia profile ID (`airiaProfileId`) or
-            Keycloak `sub` — a wrong ID kind writes to the wrong record or 404s.
+          description: Arii user ID this observation belongs to.
         tenantId:
           type: string
           format: uuid
@@ -2200,15 +2303,9 @@ components:
           description: Tags for categorization
         sampleCount:
           type: integer
-          description: Count of associated HealthKit samples
-        healthKitSamples:
-          type: array
-          items:
-            type: object
           description: |
-            Quantity samples carrying numeric lab/device values. Present only when
-            `includeHealthKitSamples=true` (avoid enabling). For current lab values
-            use `get_marker_summary` with `specificMarkers`, not this array.
+            Reads 0 unless samples were fetched, so it cannot say whether a panel has
+            results (AIP-247).
         createdAt:
           type: string
           format: date-time
@@ -2216,85 +2313,111 @@ components:
           type: string
           format: date-time
 
-    ObservationCreateDto:
+    MarkerCategoryFacet:
       type: object
-      required: [type, date, source]
+      description: One category's marker-type count across the whole requested window.
       properties:
-        type:
+        categoryId:
+          type: integer
+          nullable: true
+          description: Category id to pass back as `categoryId`. Null when the category could not be resolved.
+        categoryName:
           type: string
-          description: "Observation type: Lab, DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary, HrvSummary, Other, LifestyleHabit, Procedure, Condition, Assessment, Appointment, BodyCompositionSummary, Recovery"
-          enum: [Lab, DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary, HrvSummary, Other, LifestyleHabit, Procedure, Condition, Assessment, Appointment, BodyCompositionSummary, Recovery]
-        subType:
-          type: string
-          description: Observation sub-type (max 255 chars)
-        date:
-          type: string
-          format: date-time
-          description: Observation date (ISO 8601)
-        startDate:
-          type: string
-          format: date-time
-          description: Start date of the observation period
-        endDate:
-          type: string
-          format: date-time
-          description: End date of the observation period
-        source:
-          type: string
-          description: "Data source (max 100 chars, e.g., Oura, Fitbit, Manual)"
-        annotations:
-          type: string
-          description: Additional annotations (max 255 chars)
-        userId:
+          nullable: true
+          description: Resolved display name, e.g. "Lipids & Cardiovascular Risk".
+        markerCount:
+          type: integer
+          description: Marker types in this category within the window, counted before any `categoryId` filter.
+
+    MarkerSummaryCompact:
+      type: object
+      description: One marker's latest value in the window, trimmed for agent reads.
+      properties:
+        markerTypeId:
           type: string
           format: uuid
-          description: |
-            Arii user ID (`UserDto.id` GUID) the observation is recorded against. Omit to
-            default to the authenticated caller. If setting it explicitly, use
-            `get_current_user`.id for yourself — never an Airia profile ID, which would
-            attach the observation to the wrong record or fail.
-        tenantId:
+          nullable: true
+          description: The marker type. This is what `specificMarkers` takes on every marker tool.
+        displayName:
           type: string
-          format: uuid
-          description: Tenant ID
-        metadata:
-          type: object
-          description: Arbitrary metadata key-value pairs
-        tags:
+        value:
+          type: number
+        secondValue:
+          type: number
+          nullable: true
+          description: Second component of a paired reading, such as diastolic blood pressure.
+        textValue:
+          type: string
+          nullable: true
+          description: Set when the result is not numeric.
+        unit:
+          type: string
+        aggregationMethod:
+          type: string
+          nullable: true
+          description: How the value was derived over the window, e.g. latest, sum or average.
+        recordDate:
+          type: string
+          format: date
+          description: The day the value was recorded. Read it before calling a value current.
+        categoryName:
+          type: string
+          nullable: true
+          description: Resolved category display name, not the numeric id.
+        dataSourceName:
+          type: string
+          nullable: true
+        rangeStatus:
+          type: string
+          nullable: true
+          description: Where the value sits against its own reference range. Null when no range applies.
+        outOfRange:
+          type: boolean
+          description: True when the value falls outside its own reference range.
+
+    PagedMarkerSummaryCompact:
+      type: object
+      properties:
+        items:
           type: array
+          items:
+            $ref: "#/components/schemas/MarkerSummaryCompact"
+        totalCount:
+          type: integer
+          description: Marker types in the window after `skipFallbackData` and `select`, before paging.
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+        hasPreviousPage:
+          type: boolean
+        hasNextPage:
+          type: boolean
+        categoryFacets:
+          type: array
+          description: Marker-type count per category for the whole window, ordered by count descending.
+          items:
+            $ref: "#/components/schemas/MarkerCategoryFacet"
+        unclassifiedCount:
+          type: integer
+          description: |
+            Marker types in the window that carry no reference range, counted over the whole
+            window rather than the page or the selection. With `select=Abnormal` this is how
+            many markers could not be judged at all — read it before treating a short
+            out-of-range list as "everything else was checked and fine". Markers whose
+            *category* did not resolve are not counted here; they group into the facet whose
+            `categoryId` and `categoryName` are both null.
+        unmatchedIds:
+          type: array
+          nullable: true
+          description: |
+            Entries of `specificMarkers` that were unparseable or resolved to no marker
+            type. A short result with entries here means the ids were wrong, not that the
+            person has no data.
           items:
             type: string
-        healthKitQuantitySamples:
-          type: array
-          description: |
-            Nested measurement samples. Each item needs `markerTypeId`, `recordDate`,
-            `value`, and `unit` so a numeric result is actually recorded.
-          items:
-            type: object
-            required: [markerTypeId, value, unit]
-            properties:
-              markerTypeId:
-                type: string
-                format: uuid
-                description: Marker type ID for this sample. Resolve names via bulk_search_marker_types.
-              recordDate:
-                type: string
-                format: date
-                description: Local calendar date for this sample (YYYY-MM-DD).
-              value:
-                type: number
-                description: The numeric measurement value.
-              unit:
-                type: string
-                description: Unit of the value (e.g. mg/dL, bpm, steps).
-              startDate:
-                type: string
-                format: date-time
-                description: Sample interval start, if the API uses a window rather than a single recordDate.
-              endDate:
-                type: string
-                format: date-time
-                description: Sample interval end.
 
     PagedObservations:
       type: object
@@ -2314,184 +2437,6 @@ components:
         hasNextPage:
           type: boolean
 
-    MarkerTypeUpsertDto:
-      type: object
-      required: [name, type, category]
-      properties:
-        name:
-          type: string
-          description: Name of the marker type.
-        type:
-          type: string
-          description: The marker's data type label (e.g., Lab, Vital).
-        altNames:
-          type: array
-          items:
-            type: string
-          description: Alternative names/synonyms for the marker type.
-        category:
-          type: string
-          description: Category of the marker type.
-        unitSI:
-          type: string
-          description: SI unit for the marker type.
-        unitConventional:
-          type: string
-          description: Conventional unit for the marker type.
-        factorConvToSI:
-          type: number
-          description: Conversion factor from conventional to SI units.
-        acceptableUnits:
-          type: array
-          items:
-            type: string
-          description: Acceptable units for the marker type.
-        tenantId:
-          type: string
-          format: uuid
-          description: Tenant/Group ID (GUID) that owns this marker type. Omit for a system/default marker type.
-        loinc:
-          type: string
-          description: LOINC code for the marker type.
-        snomed:
-          type: string
-          description: SNOMED code for the marker type.
-        decimalPrecision:
-          type: integer
-          description: Decimal precision for numeric values.
-        textValue:
-          type: boolean
-          description: Whether this marker uses text (non-numeric) values.
-        systemReferenceRanges:
-          type: array
-          description: System reference ranges to create for this marker type.
-          items:
-            $ref: "#/components/schemas/SystemReferenceRangeUpsertDto"
-        tags:
-          type: array
-          items:
-            type: string
-          description: Tags for the marker type.
-
-    SystemReferenceRangeUpsertDto:
-      type: object
-      required: [type, unit]
-      properties:
-        type:
-          type: string
-          description: The type of the reference range.
-        unit:
-          type: string
-          description: The unit of the reference range.
-        segments:
-          type: array
-          description: Range segments within the system reference range.
-          items:
-            type: object
-            properties:
-              min:
-                type: number
-                description: Minimum value of the range.
-              max:
-                type: number
-                description: Maximum value of the range.
-              operator:
-                type: string
-                description: 'Operator for the range (e.g., "<", ">", "=").'
-              label:
-                type: string
-                description: Display label of the segment.
-              gender:
-                type: string
-                description: 'Gender this segment applies to (e.g., "Male", "Female").'
-
-    MedicationScheduleDto:
-      type: object
-      required: [scheduleType]
-      description: |
-        Dosing schedule that generates the forward dose log. Without a valid
-        schedule, `get_medication_history` stays empty. Shape taken from the
-        Arii POST /api/v1/Medications/user/{userId} request body.
-      properties:
-        scheduleType:
-          type: string
-          description: |
-            How doses repeat. Values seen on the API: SpecificDays, EveryFewDays, OnCycle.
-          enum: [SpecificDays, EveryFewDays, OnCycle]
-        doseTimes:
-          type: array
-          description: Clock times and dose counts for each administration.
-          items:
-            type: object
-            required: [time]
-            properties:
-              time:
-                type: string
-                description: Clock time for the dose (e.g. "08:00").
-              numberOfDoses:
-                type: integer
-                description: Number of doses at this time.
-        duration:
-          type: object
-          description: Inclusive schedule window.
-          properties:
-            startDate:
-              type: string
-              format: date-time
-            endDate:
-              type: string
-              format: date-time
-        sendReminders:
-          type: boolean
-        daysBetweenDoses:
-          type: integer
-          description: Used when scheduleType is EveryFewDays.
-        selectedDays:
-          type: array
-          description: Weekdays for SpecificDays (typically 0-6).
-          items:
-            type: integer
-        cycleConfiguration:
-          type: object
-          description: Used when scheduleType is OnCycle.
-          properties:
-            cycleUnit:
-              type: integer
-            useForValue:
-              type: integer
-            pauseForValue:
-              type: integer
-
-    UserProductHistoryLogDto:
-      type: object
-      description: |
-        One scheduled dose from user-product history. Fields named from the AIP-175
-        catalog; the live DTO may include additional properties.
-      properties:
-        scheduledDate:
-          type: string
-          format: date-time
-          description: When the dose was scheduled.
-        scheduledTime:
-          type: string
-          description: Scheduled clock time, when the API returns it separately from scheduledDate.
-        doseCount:
-          type: number
-          description: Dose count for this log entry.
-        status:
-          type: string
-          description: taken, missed, skipped, or other API status values.
-        takenAt:
-          type: string
-          format: date-time
-          description: When the dose was actually taken, if recorded.
-        scheduleType:
-          type: string
-          description: Schedule type for this medication.
-        instructions:
-          type: string
-          description: Dosing instructions.
-
   securitySchemes:
     apiKeyAuth:
       type: apiKey
@@ -2507,4 +2452,4 @@ components:
       bearerFormat: JWT
       description: |
         JWT Bearer (including Airia Platform passthrough). Requires Arii user IDs in all
-        user-scoped parameters — no Airia-profile→Arii-user auto-translation.
+        user-scoped parameters — no Airia-profile to Arii-user auto-translation.
