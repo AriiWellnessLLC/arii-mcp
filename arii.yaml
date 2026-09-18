@@ -92,7 +92,7 @@ info:
       alone. `StartDate`/`EndDate` on this tool are deprecated instants that must carry a
       trailing `Z` or the API returns 400 — prefer the record-date pair.
     - "Device / daily metrics (steps, HR, sleep)" -> marker tools
-      (`get_marker_summary`, `get_marker_samples`, `get_marker_averages`).
+      (`get_marker_summary_compact`, `get_marker_samples`, `get_marker_averages`).
 
     **Authentication:** JWT Bearer tokens (passthrough from Airia Platform) and API Key
     via `X-API-Key`.
@@ -1556,8 +1556,8 @@ paths:
         which no page size fixes (AIP-236).
 
         `specificMarkers` takes marker type IDs — the `markerTypeId` field of a
-        `get_marker_summary` row, not that row's own `id`. Copy each one exactly as
-        returned.
+        `get_marker_summary_compact` or `get_marker_summary` row, not the full summary row's
+        own `id`. Copy each one exactly as returned.
 
         Entries that are unparseable, or that resolve to no marker type, are skipped rather
         than failing the call, and come back in `unmatchedIds`. Read that field: a short
@@ -1965,9 +1965,10 @@ paths:
         no further call. A 403 is an access problem and never an absence.
 
         Then read what the question calls for, scoped to these ids with `specificMarkers`:
-        `get_marker_summary` for current values, `get_marker_averages` for a trend,
-        `get_marker_samples` for individual readings, `get_observation_samples` for whether a
-        result is normal for this person.
+        `get_marker_summary_compact` for current values, `get_marker_summary` for a named
+        panel that needs `goal`, `get_marker_averages` for a trend, `get_marker_samples` for
+        individual readings, `get_observation_samples` for whether a result is normal for
+        this person.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
