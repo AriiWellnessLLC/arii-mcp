@@ -41,13 +41,11 @@ Three distinct identifiers appear across the platform and must not be interchang
 
 ## Environments
 
-The declared server is the Arii development environment:
+The declared server is the Nicoya development environment:
 
 ```
-https://dev.api.arii.com
+https://dev.api.nicoya.health
 ```
-
-`dev.api.arii.com` and `dev.api.nicoya.health` are both live and serve the same API. The declared value is a default only.
 
 Environment targeting is handled at the gateway. Override the target per environment using the `?u=` query parameter on the gateway URL rather than editing the server block.
 
@@ -74,5 +72,5 @@ npx @redocly/cli lint arii.yaml
 Confirm every declared route still exists on the API before merging. A route that answers `401` exists and requires authentication; a `404` means the operation is not there:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://dev.api.arii.com/api/v2/MarkerType
+curl -s -o /dev/null -w '%{http_code}\n' https://dev.api.nicoya.health/api/v2/MarkerType
 ```

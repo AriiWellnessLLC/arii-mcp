@@ -134,8 +134,8 @@ info:
     **IDs:** All entity IDs are GUIDs (e.g., `3fa85f64-5717-4562-b3fc-2c963f66afa6`).
 
 servers:
-  - url: https://dev.api.arii.com
-    description: Example Arii environment (set the real base URL per environment via ?u=)
+  - url: https://dev.api.nicoya.health
+    description: Nicoya dev environment (override per environment via ?u= on the gateway URL)
 
 security:
   - apiKeyAuth: []
