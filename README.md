@@ -51,7 +51,7 @@ Environment targeting is handled at the gateway. Override the target per environ
 
 ## Authoring conventions
 
-Changes to the specification are derived from the `arii-api` implementation — controllers for routes, versioning, and authentication behaviour, and DTOs for field definitions. Read the controller action, not just its XML documentation: several parameters are declared optional in C# and rejected at runtime, and some XML comments are stale. When adding or amending an operation, follow the conventions already established in the file:
+Changes to the specification are derived from the `arii-api` implementation — controllers for routes, versioning, and authentication behaviour, and DTOs for field definitions. Follow each parameter all the way to the service or repository that consumes it, and read the controller action rather than its XML documentation. Both matter: several parameters are declared optional in C# and rejected at runtime, some XML comments are stale, and a parameter can bind on a shared request DTO while the action never reads it — `Category` and `LabProvider` bind on the documents read and are silently ignored, so they are deliberately not declared here. Declaring a filter that does nothing is worse than omitting it, because an agent will believe the result was narrowed. When adding or amending an operation, follow the conventions already established in the file:
 
 - `operationId` values are snake_case and become the MCP tool name.
 - Every operation declares `x-mcp-annotations` with the applicable hints (`readOnlyHint`, `idempotentHint`).

@@ -19,8 +19,12 @@ info:
       see what this person actually has. Then whichever read the question calls for, scoped
       to those ids with `specificMarkers` — `get_marker_summary_compact` for current values,
       `get_marker_averages` for a trend, `get_marker_samples` for individual readings,
-      `get_observation_samples` for whether a result is normal for this person. The goal is
-      inline on each marker row. Never fetch observation sample payloads for values.
+      `get_observation_samples` for whether a result is normal for this person. Never fetch
+      observation sample payloads for values.
+    - "Is she hitting her target?" is the one current-value question the compact read cannot
+      answer: it carries no goal. Use `get_marker_summary`, scoped with `specificMarkers` to
+      the markers the question names, where `goal` is inline on each row. Do not look for a
+      separate goal tool.
     - An open question with no named marker — "how am I doing", "give me a snapshot",
       "what do you have for me" — goes straight to `get_marker_summary_compact` with
       `select=Abnormal`. It answers over the whole window in a handful of rows. Do not
@@ -754,7 +758,7 @@ paths:
             format: uuid
         - name: isPrivate
           in: query
-          description: Filter by private status. Omit to return both private and shared notes.
+          description: Filter by the note's private flag. Omit to return both private and non-private notes.
           schema:
             type: boolean
         - name: isArchived
@@ -1069,8 +1073,9 @@ paths:
         full set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,
         `DailySummary`, `SleepSummary`, `HrvSummary`, `Other`, `LifestyleHabit`,
         `Procedure`, `Condition`, `BodyCompositionSummary`, `Assessment`, `Recovery` and
-        `Appointment`. Lab results are `Lab`; a DEXA or InBody scan is
-        `BodyCompositionSummary` or `Scan`; a clinician's own measurement is `Exam`.
+        `Appointment`. Lab results are `Lab`; a DEXA or InBody report arrives as `Scan`;
+        a clinician's own measurement is `Exam`. `Appointment` carries no samples at all, so
+        filtering by it here returns nothing by construction.
 
         `appliedReferenceRange` is patient-specific, filtered by sex, and converted to the
         sample's unit. It may be null when no applicable range exists.
@@ -1178,9 +1183,12 @@ paths:
 
         Returns a plain list, not a page.
 
-        The document owner is selected with `selectedUserId`. Narrow with `Category` —
-        `LabReport` for lab panels, `BodyComposition` for DEXA and InBody — rather than
-        reading the whole file and filtering afterwards.
+        The document owner is selected with `selectedUserId`.
+
+        `documentId` is the only filter this read applies. There is no category, type or
+        provider filter: everything on the person's file comes back and any narrowing is
+        yours to do on the returned rows. Judge a document by its own fields rather than
+        assuming the set was filtered.
 
         Omit `RequestingUserId`. The caller is resolved from the session and any value sent
         here is discarded.
@@ -1211,20 +1219,6 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: Category
-          in: query
-          description: |
-            Restrict to one document category. Use `LabReport` for lab panels and
-            `BodyComposition` for DEXA/InBody reports.
-          schema:
-            type: string
-            enum: [LabReport, BodyComposition, Other, GeneratedReport]
-        - name: LabProvider
-          in: query
-          description: Restrict to documents from one lab provider.
-          schema:
-            type: string
-            enum: [None, Quest, LabCorp, MayoClinic, ClevelandClinic, ARUP, BioReference, SonicHealthcare, Other]
       responses:
         "200":
           description: Documents with extracted features
@@ -1322,8 +1316,13 @@ paths:
         On a populated chart this returns one row per marker type, thirty-one fields each,
         with no page size to bound it — enough to exhaust the model's context before it can
         answer (AIP-297). For an open question such as "how am I doing", call
-        `get_marker_summary_compact` instead. Use this tool when a named panel needs the
-        full row.
+        `get_marker_summary_compact` instead. Use this tool when a named panel needs fields
+        the compact row drops — above all `goal`, which makes this the read for "is she
+        hitting her target".
+
+        `goal` is the target for that marker, and `goalIsDefault` says whether it is one the
+        person set or a platform default such as the 10,000-step goal. Do not describe a
+        default as a goal they chose.
 
         Scope the call with `specificMarkers`, a list of marker type IDs from
         `get_user_marker_types_with_data` — or from `bulk_search_marker_types` when that list
@@ -1396,9 +1395,13 @@ paths:
       operationId: get_marker_summary_compact
       summary: Get a context-sized page of a user's current marker values
       description: |
-        Returns the same current values as `get_marker_summary`, on a row trimmed to twelve
-        fields and bounded by a page, together with the category counts for the whole
-        window.
+        Returns a user's current marker values on a row trimmed to twelve fields and
+        bounded by a page, together with the category counts for the whole window.
+
+        It reads the same underlying values as `get_marker_summary`, but the two do not
+        return the same set by default: `skipFallbackData` is `true` here and `false` there,
+        so markers whose only value would be carried forward from before the window appear
+        in the full summary and not in this one.
 
         **This is the default read for an open question about how someone is doing.** The
         full summary returns one row per marker type with thirty-one fields each and no page
@@ -1411,10 +1414,18 @@ paths:
         applies — `rangeStatus` and `outOfRange`. `secondValue` and `textValue` carry
         blood-pressure style pairs and non-numeric results.
 
+        It carries **no goal**. For "is she hitting her target", use `get_marker_summary`
+        scoped with `specificMarkers`; its rows have `goal` inline. Do not read a missing
+        goal here as the person not having one.
+
         `select=Abnormal` filters on the server, across every marker in the window, to
         values outside their own reference range. Prefer it for "how am I doing": it answers
         over the whole chart in a handful of rows, where paging through `All` answers over
         whatever fraction you managed to read.
+
+        Rows come back most recent first, so a partial page is the newest readings rather
+        than an arbitrary slice — unlike `get_marker_averages`, which pages by marker type
+        ID. `pageSize` above 200 returns 400 rather than being clamped.
 
         `categoryFacets` counts markers per category across the whole window and carries the
         `categoryId` to filter by. Facets are counted before `categoryId` is applied, so they
@@ -2391,7 +2402,13 @@ components:
             $ref: "#/components/schemas/MarkerCategoryFacet"
         unclassifiedCount:
           type: integer
-          description: Marker types in the window whose category could not be resolved.
+          description: |
+            Marker types in the window that carry no reference range, counted over the whole
+            window rather than the page or the selection. With `select=Abnormal` this is how
+            many markers could not be judged at all — read it before treating a short
+            out-of-range list as "everything else was checked and fine". Markers whose
+            *category* did not resolve are not counted here; they group into the facet whose
+            `categoryId` and `categoryName` are both null.
         unmatchedIds:
           type: array
           nullable: true
