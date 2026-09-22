@@ -375,6 +375,14 @@ paths:
         Returns meals recorded by a user over a date range, including their attached
         nutrition data.
 
+        Nutrition arrives in `healthKitSamples`. Each entry carries `quantityTypeName`
+        (`TotalFats`, `DietaryFiber`, `DietaryProtein`, …) — read that. The integer
+        `quantityType` beside it is the same value (1 carbohydrates, 3 energy, 4 fibre,
+        5 protein, 6 sodium, 7 total fat, 13 sugar) and is only for clients that predate
+        the name. Never infer a nutrient from the order entries arrive in: fibre and total
+        fat, and carbohydrates and protein, are easy to transpose and the reply gives the
+        reader no way to notice.
+
         Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`.
 
         When no meals match, this returns 404 with a message, not an empty list. That is
@@ -434,7 +442,10 @@ paths:
       operationId: get_meal
       summary: Get a specific meal by ID
       description: |
-        Returns one meal in full, including its complete nutrition breakdown.
+        Returns one meal in full, including its complete nutrition breakdown in
+        `healthKitSamples`. Read each entry's `quantityTypeName` (`TotalFats`,
+        `DietaryFiber`, `DietaryProtein`, …); the integer `quantityType` beside it is the
+        same value and is only for clients that predate the name.
 
         Use only with a meal ID returned by `get_user_meals`.
 
@@ -2141,6 +2152,46 @@ components:
           type: string
           format: date-time
 
+    MealNutritionSample:
+      type: object
+      description: |
+        One nutrient recorded against a meal. Read `quantityTypeName` — it names the nutrient
+        directly. `quantityType` is the same value as an integer, kept for clients that already
+        read it; use it only when the name is absent, via this mapping:
+
+        | quantityType | Nutrient            | Usual unit |
+        |---|---|---|
+        | 1  | Carbohydrates       | g    |
+        | 3  | Energy (calories)   | kcal |
+        | 4  | Fibre               | g    |
+        | 5  | Protein             | g    |
+        | 6  | Sodium              | mg   |
+        | 7  | Total fat           | g    |
+        | 13 | Sugar               | g    |
+
+        Codes 4 and 7 (fibre and total fat), and 1 and 5 (carbohydrates and protein), are the
+        pairs most often reported the wrong way round. Check the code, not the magnitude.
+      properties:
+        quantityTypeName:
+          type: string
+          description: >-
+            The nutrient's name, e.g. `TotalFats`, `DietaryFiber`, `DietaryProtein`,
+            `DietaryCarbohydrates`, `DietaryEnergy`, `DietarySodium`, `DietarySugar`.
+            Prefer this over `quantityType`; they always agree.
+        quantityType:
+          type: integer
+          description: >-
+            Nutrient code: 1 carbohydrates, 3 energy (kcal), 4 fibre, 5 protein, 6 sodium,
+            7 total fat, 13 sugar. Any other value is a nutrient this table does not cover —
+            report it by code rather than guessing a name.
+          enum: [1, 3, 4, 5, 6, 7, 13]
+        value:
+          type: number
+          description: The recorded amount, in `unit`.
+        unit:
+          type: string
+          description: Unit as recorded — g for macros, mg for sodium, kcal for energy.
+
     MealDto:
       type: object
       properties:
@@ -2173,6 +2224,15 @@ components:
         servingUnitMetric:
           type: string
           description: Metric serving unit
+        healthKitSamples:
+          type: array
+          description: |
+            The meal's nutrition, one entry per nutrient. `quantityType` is a numeric code,
+            not a name — read it from the enum on the item schema and never infer a nutrient
+            from the order entries arrive in.
+          items:
+            $ref: "#/components/schemas/MealNutritionSample"
+
 
     NoteDto:
       type: object
