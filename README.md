@@ -12,7 +12,7 @@ The surface is **read-only**. No `create_*` or other write operation is exposed:
 
 Descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, medication adherence, and clinical notes.
 
-The specification currently defines **29 operations** across **29 paths** and **11 component schemas**, organised into the following domains:
+The specification currently defines **29 operations** across **29 paths** and **16 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
@@ -56,8 +56,8 @@ Changes to the specification are derived from the `arii-api` implementation — 
 - `operationId` values are snake_case and become the MCP tool name.
 - Every operation declares `x-mcp-annotations` with the applicable hints (`readOnlyHint`, `idempotentHint`).
 - Descriptions are written as agent guidance, stating the workflow an operation belongs to and the tools that should precede or follow it.
-- Response schemas are declared under `components/schemas` and referenced, never inlined. Coverage is partial: the entity reads (users, journals, meals, notes, observations, compact marker summary) declare a response schema and the remaining operations document their response in prose. Extending coverage is welcome; adding a schema that has not been checked against the merged DTO is not.
-- Enumerated values are serialised by the API as integers with camelCase property names, and must be declared accordingly.
+- Response schemas are declared under `components/schemas` and referenced, never inlined. Coverage is partial: the entity reads (users, journals, meals, notes, observations, observation samples, compact marker summary) declare a response schema and the remaining operations document their response in prose. Extending coverage is welcome; adding a schema that has not been checked against the merged DTO is not.
+- Enumerated values are serialised as integers by default. A DTO property carrying `[JsonConverter(typeof(JsonStringEnumConverter))]` (or `JsonStringEnumListConverter` for a list) is serialised as member names, and must be declared as a string enum. So is every enum on an action whose `JsonResult` options add `JsonStringEnumConverter`. Check the property, not the enum type: the same enum can be an integer on one DTO and a string on another. Property names are camelCase either way.
 
 The `get_user` operation is the reference implementation for block structure and description style.
 
