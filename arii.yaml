@@ -1089,8 +1089,17 @@ paths:
         a clinician's own measurement is `Exam`. `Appointment` carries no samples at all, so
         filtering by it here returns nothing by construction.
 
-        `appliedReferenceRange` is patient-specific, filtered by sex, and converted to the
-        sample's unit. It may be null when no applicable range exists.
+        `appliedReferenceRange` is the range the practice applies to this patient's result,
+        filtered by sex and converted to the sample's unit. It is null when no range applies,
+        or when the range could not be put in the sample's unit (always for a text result
+        with no unit). Null alone does not mean the marker has no range; check
+        `metaData.referenceRange` when present.
+
+        `appliedReferenceRange.source` is a string naming where the range came from:
+        `Platform` (the system default), `Org` (the practice's default), `Cohort` (a group
+        the patient belongs to, named in `cohortName`) or `Patient` (set for this person
+        individually). Say which one applied when you report the range. `cohortId` and
+        `cohortName` are set only when `source` is `Cohort`.
 
         Do not confuse `appliedReferenceRange` with `metaData.referenceRange`, which is the
         range printed on the lab report.
@@ -1167,6 +1176,10 @@ paths:
       responses:
         "200":
           description: Paginated raw samples with applied reference ranges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedObservationSamples"
         "400":
           description: recordStartDate and recordEndDate are both required
         "403":
@@ -2497,6 +2510,237 @@ components:
           type: integer
         totalPages:
           type: integer
+        hasNextPage:
+          type: boolean
+
+    ReferenceRangeSegment:
+      type: object
+      description: One band of a reference range, e.g. "Normal" between `min` and `max`.
+      properties:
+        min:
+          type: number
+          nullable: true
+          description: Lower bound. Null when the band is open below.
+        max:
+          type: number
+          nullable: true
+          description: Upper bound. Null when the band is open above.
+        operator:
+          type: string
+          nullable: true
+          description: Comparison for the band, e.g. `<`, `>` or `=`.
+        label:
+          type: string
+          description: Display label of the band, e.g. "Normal" or "High".
+        gender:
+          type: string
+          nullable: true
+          description: Sex the band applies to, e.g. "Male" or "Female". Null when it applies to both.
+
+    AppliedReferenceRange:
+      type: object
+      description: |
+        The reference range the practice applies to this patient's result, filtered by sex
+        and converted to the sample's unit. `source` says where it came from. Not the range printed on the
+        lab report, which is `metaData.referenceRange`.
+      properties:
+        rangeId:
+          type: string
+          format: uuid
+          description: Id of the winning range row. Traceability only.
+        source:
+          type: string
+          enum: [Platform, Org, Cohort, Patient]
+          description: |
+            Where the range came from: `Platform` (the system default), `Org` (the
+            practice's default), `Cohort` (a group the patient belongs to) or `Patient`
+            (set for this person individually). Serialised as the name, not a number.
+        cohortId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The winning cohort. Set only when `source` is `Cohort`.
+        cohortName:
+          type: string
+          nullable: true
+          description: The winning cohort's display name. Set only when `source` is `Cohort`.
+        unit:
+          type: string
+          nullable: true
+          description: Unit of the range, after any measurement-system conversion.
+        segments:
+          type: array
+          nullable: true
+          description: The range's bands, already filtered to the patient's sex.
+          items:
+            $ref: "#/components/schemas/ReferenceRangeSegment"
+
+    ObservationSample:
+      type: object
+      description: One raw measurement sample.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Sample ID
+        unit:
+          type: string
+          nullable: true
+          description: Unit of `value`, after any measurement-system conversion.
+        canonicalUnit:
+          type: string
+          nullable: true
+          description: |
+            Normalised spelling of `unit`. Compare this, not `unit`, to decide whether two
+            samples share a unit. Null only when the sample has no unit.
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        value:
+          type: number
+          description: Numeric value. Read `textValue` instead when `isTextResult` is true.
+        valueHighPrecision:
+          type: number
+          nullable: true
+          description: Higher-precision value. After a unit conversion it equals `value`.
+        secondValue:
+          type: number
+          nullable: true
+          description: Second component of a paired reading, such as diastolic blood pressure.
+        secondUnit:
+          type: string
+          nullable: true
+          description: Unit of `secondValue`.
+        healthKitQuantityId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Always null on this endpoint.
+        userId:
+          type: string
+          format: uuid
+          description: Arii user ID this sample belongs to.
+        observationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The observation this sample came from.
+        observation:
+          type: object
+          nullable: true
+          description: |
+            The observation this sample came from, carrying its `id`, `type`, `date`,
+            `startDate`, `endDate`, `source`, `metadata` and `dataSourceLogId`. Its other
+            keys are present but not populated on this endpoint.
+        textValue:
+          type: string
+          nullable: true
+          description: The result as text, e.g. "Negative" or "<0.1".
+        isTextResult:
+          type: boolean
+          description: |
+            True when the result has no plottable number (a qualifier such as "<0.1", or
+            plain text such as "Negative"). Report `textValue`, not `value`.
+        externalCode:
+          type: string
+          nullable: true
+        region:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          nullable: true
+          items:
+            type: string
+        panel:
+          type: string
+          nullable: true
+          description: Lab panel the result was reported under.
+        metaData:
+          type: object
+          nullable: true
+          description: |
+            Arbitrary metadata key-value pairs. `referenceRange` here is the range printed
+            on the lab report, not `appliedReferenceRange`.
+        annotations:
+          type: string
+          nullable: true
+        markerTypeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The marker type. This is what `specificMarkers` takes on every marker tool.
+        systemReferenceRangeId:
+          type: string
+          format: uuid
+          nullable: true
+        markerType:
+          type: object
+          nullable: true
+          description: |
+            The marker type's definition, including its `name`. Its `systemReferenceRanges`
+            are unresolved candidates in their stored unit; never judge a value against them.
+        systemReferenceRange:
+          type: object
+          nullable: true
+          description: Legacy form of the applied range. Read `appliedReferenceRange` instead.
+        appliedReferenceRange:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AppliedReferenceRange"
+          description: |
+            The reference range the practice applies to this patient's result. Null when no
+            range applies or when it could not be put in the sample's unit. Null alone does
+            not mean the marker has no range; check `metaData.referenceRange` when present.
+        connectorId:
+          type: string
+          nullable: true
+          description: The record's id in the system it came from.
+        deviceName:
+          type: string
+          nullable: true
+        originalSource:
+          type: string
+          nullable: true
+          description: The app or device that originally recorded the sample.
+        dataSource:
+          type: integer
+          nullable: true
+          description: Data source as its numeric code. Read `dataSourceName` for the name.
+        dataSourceName:
+          type: string
+          nullable: true
+          description: Data source name, e.g. "Fitbit".
+        recordDate:
+          type: string
+          format: date
+          description: The day the value was recorded. Read it before calling a value current.
+        recordingOffsetMinutes:
+          type: integer
+          nullable: true
+          description: Recording offset, in minutes.
+
+    PagedObservationSamples:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObservationSample"
+        totalCount:
+          type: integer
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+        hasPreviousPage:
+          type: boolean
         hasNextPage:
           type: boolean
 
