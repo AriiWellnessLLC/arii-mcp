@@ -1,0 +1,67 @@
+# Checks that the test work for this pull request's Jira ticket actually happened: the ticket
+# carries a stamp written by /tests:implement, and the matching pull request in
+# arii-automation-qe has a green flow-catalog-gate. What passes, what fails, and how to fix each
+# failure is in the action's README:
+# https://github.com/AriiWellnessLLC/infra-pipelines/tree/main/actions/qa-gate
+#
+# Until 2026-10-10 this only warns: a failing verdict still reports green and says "would block".
+# On a pull request the check judges wrongly, add the label `qa-gate-override` and comment one
+# line saying why. Every override is posted to Slack, so skipping the gate stays visible.
+name: qa-gate
+
+# The trigger list is wide because the answer can change without a push: the Jira key can be
+# typed into the title or body, and the override label added, after the pull request is opened.
+#
+# No `paths:` filter, deliberately. This check is meant to become required, and a required check
+# whose workflow is skipped never reports at all, which blocks the pull request forever. The job
+# always runs and decides for itself whether there is product code to judge.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]
+
+# Keyed by workflow as well as branch: the group name is global to the repository, so a bare
+# `head_ref` would put any other branch-keyed workflow in this same group and let the two cancel
+# each other's runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job id and name are both `qa-gate` because this exact string becomes the required status
+  # check in the branch ruleset. Renaming either one silently stops the ruleset matching it.
+  qa-gate:
+    name: qa-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Both are needed: the sticky comment goes through the pull-requests scope, and a pull
+      # request's labels are issue labels.
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the action diffs this branch against the base to list changed files.
+          fetch-depth: 0
+
+      # TODO bump to @main once infra-pipelines PR merges
+      - uses: AriiWellnessLLC/infra-pipelines/actions/qa-gate@feat/qa-gate
+        with:
+          warn-only: 'true'
+          warn-until: '2026-10-10'
+          jira-email: ${{ secrets.JIRA_EMAIL }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          slack-bot-token: ${{ secrets.QA_GATE_SLACK_BOT_TOKEN }}
+          # Organization variable holding the channel id of #qa_gate. If it is ever empty the
+          # gate still writes the pull request comment and the job summary, but posts nothing
+          # to Slack.
+          slack-channel-id: ${{ vars.QA_GATE_SLACK_CHANNEL_ID }}
+          github-app-id: ${{ secrets.APP_INFRA_APP_ID }}
+          github-app-private-key: ${{ secrets.APP_INFRA_PRIVATE_KEY }}
+          # Used to read arii-automation-qe when the app token cannot. Set in arii-api and
+          # Arii-Dashboard (an existing PAT) and in arii-mcp (a read-only token, because that
+          # repo is public and the APP_INFRA secrets deliberately do not reach it). Elsewhere the
+          # expression is empty and the action uses the app token. The line stays everywhere so
+          # the eight workflows match.
+          qe-read-token: ${{ secrets.PAT_ARII_AUTOMATION_QE_ACTIONS }}
