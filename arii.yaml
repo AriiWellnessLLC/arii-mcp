@@ -1610,6 +1610,17 @@ paths:
         `useWeeklyAggregation` controls chart bucketing. Omit it for the 90-day threshold,
         `true` for weekly buckets, `false` for daily.
 
+        Each `chartData` point is either one day or one 7-day week. A weekly point carries
+        `bucketStartDate` and `bucketEndDate`, the first and last day of its week; a daily
+        point has neither. Weeks are counted from `recordStartDate`, not calendar weeks, and
+        the last one ends at `recordEndDate`. A week whose readings all fall on one day is
+        dated by that day, so a lab result keeps the day it was taken. Any other week is
+        dated by its first day, and its value sums up the whole week. So when `recordDate`
+        differs from `bucketStartDate`, the point is that day's reading; when they match, it
+        may cover several days. Never give a weekly point's date as the day of a reading
+        unless you know it held one: for exact reading days pass `useWeeklyAggregation=false`,
+        or read them from `get_marker_samples` (AIP-343).
+
         Each log may contain `metaData.referenceRange`. This is the range printed on the lab
         report in the reading's stored unit. Report it as stored rather than treating it as
         a patient-specific range or comparing converted values to it (AIP-238).
@@ -1679,7 +1690,9 @@ paths:
           in: query
           description: |
             Chart bucketing. Omit for the ~90-day threshold, `true` for weekly buckets,
-            `false` for daily.
+            `false` for daily. Weekly points carry `bucketStartDate` and `bucketEndDate`;
+            pass `false` for a marker read only now and then, such as a lab result, so each
+            reading comes back on its own day.
           schema:
             type: boolean
       responses:
