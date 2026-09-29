@@ -1486,13 +1486,12 @@ paths:
 
         **Sources.** Each row reads ONE source for its marker, named in `dataSourceName` —
         the person's chosen source for that marker, or their default — and drops readings
-        from any other. `availableSources` on the same row lists every source this marker
-        has readings from, over the person's whole history, each with `dataSourceName` and,
-        for an aggregator such as Apple Health, `originalSource` (the device inside it). Any
-        source in `availableSources` other than the row's `dataSourceName` was not read: name
-        it as recorded but not included, not as covering the window asked about. A marker
-        with no row here has no `availableSources` to read; for those, call
-        `get_marker_data_sources` (AIP-350).
+        from any other. Unlike `get_marker_summary` and `get_marker_averages`, this row
+        carries no `availableSources`. When the question needs the other sources — for a
+        marker returned here, or one with no row at all — call `get_marker_data_sources`
+        with just those marker ids. Any source it lists other than the row's
+        `dataSourceName` was not read: name it as recorded but not included, not as
+        covering the window asked about (AIP-350).
 
         If this read fails, say you could not retrieve the data. A failure is never evidence
         that the person has none.
