@@ -1440,6 +1440,10 @@ paths:
         applies — `rangeStatus` and `outOfRange`. `secondValue` and `textValue` carry
         blood-pressure style pairs and non-numeric results.
 
+        `dataSourceName` is the one source the row read; readings from any other source are
+        dropped. This row carries no list of the other sources: call
+        `get_marker_data_sources` when the question needs them (AIP-350).
+
         It carries **no goal**. For "is she hitting her target", use `get_marker_summary`
         scoped with `specificMarkers`; its rows have `goal` inline. Do not read a missing
         goal here as the person not having one.
@@ -1479,6 +1483,16 @@ paths:
         On a share-based read the start date may be narrowed to the share's own window, so
         the range covered can be shorter than the one you asked for, with nothing on the
         response saying so. Read the returned dates rather than assuming your range held.
+
+        **Sources.** Each row reads ONE source for its marker, named in `dataSourceName` —
+        the person's chosen source for that marker, or their default — and drops readings
+        from any other. `availableSources` on the same row lists every source this marker
+        has readings from, over the person's whole history, each with `dataSourceName` and,
+        for an aggregator such as Apple Health, `originalSource` (the device inside it). Any
+        source in `availableSources` other than the row's `dataSourceName` was not read: name
+        it as recorded but not included, not as covering the window asked about. A marker
+        with no row here has no `availableSources` to read; for those, call
+        `get_marker_data_sources` (AIP-350).
 
         If this read fails, say you could not retrieve the data. A failure is never evidence
         that the person has none.
@@ -1628,6 +1642,16 @@ paths:
         On a share-based read the start date may be narrowed to the share's own window, so
         the range covered can be shorter than the one you asked for, with nothing on the
         response saying so. Read the returned dates rather than assuming your range held.
+
+        **Sources.** Each row reads ONE source for its marker, named in `dataSourceName` —
+        the person's chosen source for that marker, or their default — and drops readings
+        from any other. `availableSources` on the same row lists every source this marker
+        has readings from, over the person's whole history, each with `dataSourceName` and,
+        for an aggregator such as Apple Health, `originalSource` (the device inside it). Any
+        source in `availableSources` other than the row's `dataSourceName` was not read: name
+        it as recorded but not included, not as covering the window asked about. A marker
+        with no row here has no `availableSources` to read; for those, call
+        `get_marker_data_sources` (AIP-350).
 
         If this read fails, say you could not retrieve the data. A failure is never evidence
         that the person has none.
@@ -2003,6 +2027,9 @@ paths:
         A marker absent from this list is not recorded for this patient, and saying so needs
         no further call. A 403 is an access problem and never an absence.
 
+        It does not say which sources a marker came from. For that, call
+        `get_marker_data_sources` with the ids you matched here.
+
         Then read what the question calls for, scoped to these ids with `specificMarkers`:
         `get_marker_summary_compact` for current values, `get_marker_summary` for a named
         panel that needs `goal`, `get_marker_averages` for a trend, `get_marker_samples` for
@@ -2025,6 +2052,90 @@ paths:
       responses:
         "200":
           description: Marker types the user has data for
+        "403":
+          description: Requester is not permitted to read this user's data dictionary
+
+  /api/v2/Users/{userId}/DataDictionary/MarkerTypes/DataSources:
+    get:
+      tags: [DataDictionary]
+      operationId: get_marker_data_sources
+      summary: List the sources each marker has readings from
+      description: |
+        Returns, for each marker type you ask about, the sources this person has readings
+        from — a device such as `"Oura"` or `"AppleHealth"`, a lab, a manual entry — as names,
+        sorted. It covers the person's whole history, not a window: a source listed here has
+        readings for the marker at some time, not necessarily in the period asked about.
+
+        **Why it matters.** Every other marker read — `get_marker_summary`,
+        `get_marker_summary_compact`, `get_marker_averages`, `get_marker_samples` — returns
+        only ONE source per marker: the person's chosen source for that marker, or their
+        default. Readings from every other source are dropped without a word, so a read never
+        tells you they exist. This is the only tool that does.
+
+        **When to call it.** For the markers a read returned **no row** for. A row from
+        `get_marker_averages` or `get_marker_summary` already carries `availableSources`, the
+        same answer, so there is no need to ask again for those. `get_marker_summary_compact`
+        rows carry no such list, so after that read call this for any marker whose other
+        sources the question needs. Send only those marker ids, and reuse the result for the
+        rest of the conversation unless the subject changes.
+
+        **Always pass `scope=ExistingData`.** It lists the sources that hold readings. Without
+        it the default also lists connected devices that could supply a marker but have sent
+        nothing, which would send the person looking for data that does not exist.
+
+        **Reading the result.**
+        - One source: the reads cover it. Nothing else to say about sources.
+        - More than one: the reads return one of them. Say which source the numbers came from
+          and name the others as recorded but not included.
+        - The read came back empty, but this lists sources: this marker has readings recorded
+          in a source the read did not cover. That is not "not recorded" — name those sources,
+          without claiming they cover the period asked about.
+        - An empty list: no readings from any source.
+
+        No tool reads the other sources' values, so name them; do not offer to fetch them.
+
+        Pass each id as its own `markerTypeIds` entry, copied from
+        `get_user_marker_types_with_data`. Every id you send comes back, with an empty list
+        when no source applies. An empty `markerTypeIds` returns 400; omitting it returns
+        every marker the person has, which is rarely what the question needs.
+
+        Access is resolved from who is asking, exactly as for
+        `get_user_marker_types_with_data`; no header is involved. A 403 is an access problem
+        and never an absence.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: markerTypeIds
+          in: query
+          description: |
+            Marker type IDs to report on — the `id` of a `get_user_marker_types_with_data`
+            row. Repeat the parameter for each one.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - name: scope
+          in: query
+          description: |
+            Which sources to list. Always send `ExistingData`: sources the person has
+            readings from. `ConnectedIntegrations` is connected devices whether or not they
+            sent anything, and `All` (the default) is both.
+          schema:
+            type: string
+            enum: [ExistingData, ConnectedIntegrations, All]
+            default: All
+      responses:
+        "200":
+          description: |
+            One entry per marker type, `{ markerTypeId, dataSources }`, where `dataSources`
+            is a sorted list of source names.
+        "400":
+          description: "`markerTypeIds` was given but empty"
         "403":
           description: Requester is not permitted to read this user's data dictionary
 
