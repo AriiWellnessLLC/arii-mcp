@@ -35,8 +35,8 @@ info:
       there never means this patient has it.
     - "Flag anything out of range" / "which labs are abnormal": `get_out_of_range_results`.
       It flags each result `L` or `H` on the server and names the range's source and the
-      draw date. Band labels elsewhere (`rangeStatus`, `segments[].label`) are alert levels,
-      not directions: never report a result as low or high from a label.
+      draw date. Band labels on `get_observation_samples` (`segments[].label`) are alert
+      levels, not directions: never report a result as low or high from a label.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -1444,6 +1444,12 @@ paths:
         applies — `rangeStatus` and `outOfRange`. `secondValue` and `textValue` carry
         blood-pressure style pairs and non-numeric results.
 
+        `rangeStatus` is the side of the normal band the row's value is on: `L` below, `H`
+        above, `InRange` inside, null when no range could judge it (null never means normal).
+        The range is the lab report's own when the reading carries one, else the range
+        resolved for this patient — the same judgement `get_out_of_range_results` makes. For
+        the range itself, its source and the draw date, call `get_out_of_range_results`.
+
         It carries **no goal**. For "is she hitting her target", use `get_marker_summary`
         scoped with `specificMarkers`; its rows have `goal` inline. Do not read a missing
         goal here as the person not having one.
@@ -1581,11 +1587,12 @@ paths:
         range's source, and the draw date.
 
         **Use this whenever you are asked to flag, list or summarise out-of-range lab
-        results.** It is the only read that says which way a result is off. Band labels on
-        the other tools (`rangeStatus` on `get_marker_summary_compact`, `segments[].label` on
-        `get_observation_samples`) are alert levels, not directions: in most ranges "Low" is
-        the in-range green band and "High" is a red band on either side. Never turn a band
-        label into "low" or "high". Take the direction from `flag` only.
+        results.** It is the one read that gives, for each result, the side it is off, the
+        range it was judged against, where that range came from and the draw date. Band
+        labels on `get_observation_samples` (`segments[].label`) are alert levels, not
+        directions: in most ranges "Low" is the in-range green band and "High" is a red band
+        on either side. Never turn a band label into "low" or "high". Take the direction from
+        `flag` only.
 
         `rangeSource` says whose range decided the flag. `LabReport` is the range printed on
         the lab report. `Patient`, `Cohort`, `Org` (the practice) and `Platform` (the
@@ -2553,10 +2560,11 @@ components:
         rangeStatus:
           type: string
           nullable: true
-          description: Where the value sits against its own reference range. Null when no range applies.
+          enum: [L, H, InRange]
+          description: L below the normal band, H above it, InRange inside it. Null when no range could judge the value — never read null as normal.
         outOfRange:
           type: boolean
-          description: True when the value falls outside its own reference range.
+          description: True when the value is outside its normal band, borderline or further.
 
     PagedMarkerSummaryCompact:
       type: object
