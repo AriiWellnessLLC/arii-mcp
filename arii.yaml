@@ -93,7 +93,7 @@ info:
       alone. `StartDate`/`EndDate` on this tool are deprecated instants that must carry a
       trailing `Z` or the API returns 400 — prefer the record-date pair.
     - "Device / daily metrics (steps, HR, sleep)" -> marker tools
-      (`get_marker_summary_compact`, `get_marker_samples`, `get_marker_averages`).
+      (`get_marker_summary_compact`, `get_marker_samples_compact`, `get_marker_averages_compact`).
 
     **Authentication:** JWT Bearer tokens (passthrough from Airia Platform) and API Key
     via `X-API-Key`.
@@ -124,8 +124,7 @@ info:
 
     **Pagination:** 0-based `pageNumber` and `pageSize`. Page sizes and defaults differ per
     tool and are stated on each. The three compact marker reads are not paged: they are
-    bounded by their scope, and `get_marker_samples_compact` says `truncated` when it cuts. `get_marker_samples` reports `totalCount` and `totalPages`
-    as `1` regardless of the real total — page it with `hasNextPage` only.
+    bounded by their scope, and `get_marker_samples_compact` says `truncated` when it cuts.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
     (`YYYY-MM-DD`). Journals and symptoms take this pair too; prefer it there. `startDate`/
@@ -2493,6 +2492,12 @@ components:
         isPreferredSource:
           type: boolean
           description: True on the person's preferred source's row.
+        referenceRange:
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
+          description: >-
+            The range `rangeStatus` was judged against, in `unit`. Absent when the value was
+            not judged. Quote it as the report's range.
         rangeStatus:
           type: string
           nullable: true
@@ -2601,6 +2606,12 @@ components:
         displayPrecision:
           type: integer
           nullable: true
+        referenceRange:
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
+          description: >-
+            The range on the newest reading in the window that carries one, in `unit`. Absent
+            when no reading carries one. Quote it as the report's range.
         periods:
           type: array
           description: With `groupBy` only. One entry per week or month with a value.
@@ -2677,16 +2688,9 @@ components:
         isPreferredSource:
           type: boolean
         referenceRange:
-          type: object
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
           description: The range printed with the reading, in its unit. Absent when it carries none.
-          properties:
-            type:
-              type: string
-              description: Where the range came from, e.g. "Lab".
-            segments:
-              type: array
-              items:
-                $ref: "#/components/schemas/ReferenceRangeSegment"
         rangeStatus:
           type: string
           nullable: true
@@ -2727,6 +2731,20 @@ components:
           type: integer
         hasNextPage:
           type: boolean
+
+    PrintedReferenceRange:
+      type: object
+      description: >-
+        A range that arrived with a reading, typically the lab report's own, converted to the
+        reading's unit.
+      properties:
+        type:
+          type: string
+          description: Where the range came from, e.g. "Lab".
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferenceRangeSegment"
 
     ReferenceRangeSegment:
       type: object
