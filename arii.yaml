@@ -126,11 +126,11 @@ info:
     as `1` regardless of the real total — page it with `hasNextPage` only.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
-    (`YYYY-MM-DD`). `startDate`/`endDate` are instants, but on journals, symptoms and dose
-    history a plain calendar day is accepted too and covers the whole of that day; on
-    observations it still returns 400 without a trailing `Z` (`2026-08-28T00:00:00Z`). Each
-    tool states which it takes. The reads that still take instants only are tracked as
-    AIP-277.
+    (`YYYY-MM-DD`). Journals and symptoms take this pair too; prefer it there. `startDate`/
+    `endDate` are instants, but on journals, symptoms and dose history a plain calendar day
+    is accepted too and covers the whole of that day in UTC, not in the patient's timezone;
+    on observations it still returns 400 without a trailing `Z` (`2026-08-28T00:00:00Z`).
+    Each tool states which it takes.
 
     **Errors:** `get_current_user` returns 401 if unauthenticated and 404 if the JWT has
     no linked Arii user. Wrong ID kind (Airia profile ID / Keycloak `sub` as `userId`)
@@ -291,9 +291,14 @@ paths:
         Use for the user's own written account of how they were feeling or what they
         experienced, not for measured health data.
 
-        `startDate` and `endDate` accept a plain calendar day such as `2026-08-28`, where
-        the end day is covered in full. A UTC instant such as `2026-08-28T00:00:00Z` is also
-        accepted and is used exactly as sent.
+        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`. They are the
+        patient's own calendar days, and the end day is covered in full. Sending only one of
+        them returns 400. The pair takes priority over `date`, `startDate` and `endDate`.
+
+        `startDate` and `endDate` are the older form. A plain calendar day such as
+        `2026-08-28` is read as a UTC day, so for a patient outside UTC it can miss or add
+        entries near midnight. A UTC instant such as `2026-08-28T00:00:00Z` is used exactly
+        as sent.
 
         When no entries match, this returns 404 with a message, not an empty list. Read
         that as no entries for the filter, not as an error.
@@ -305,21 +310,33 @@ paths:
         idempotentHint: true
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: recordStartDate
+          in: query
+          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Send together with recordStartDate.
+          schema:
+            type: string
+            format: date
         - name: date
           in: query
-          description: Filter a single day, as `2026-08-28`. A UTC instant is also accepted.
+          description: Filter a single UTC day, as `2026-08-28`. A UTC instant is also accepted. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
         - name: startDate
           in: query
-          description: Window start, as `2026-08-28` or a UTC instant with a trailing `Z`.
+          description: Older form. Window start, as a UTC day `2026-08-28` or a UTC instant with a trailing `Z`. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
         - name: endDate
           in: query
-          description: Window end, as `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`.
+          description: Older form. Window end, as a UTC day `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
@@ -1287,9 +1304,14 @@ paths:
         caller's identity, and omitting it there returns 400 "RequestingUserId parameter is
         required."
 
-        `startDate` and `endDate` accept a plain calendar day such as `2026-08-28`, where
-        the end day is covered in full. A UTC instant such as `2026-08-28T00:00:00Z` is also
-        accepted and is used exactly as sent.
+        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`. They are the
+        patient's own calendar days, and the end day is covered in full. Sending only one of
+        them returns 400. The pair takes priority over `startDate` and `endDate`.
+
+        `startDate` and `endDate` are the older form. A plain calendar day such as
+        `2026-08-28` is read as a UTC day, so for a patient outside UTC it can miss or add
+        entries near midnight. A UTC instant such as `2026-08-28T00:00:00Z` is used exactly
+        as sent.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
@@ -1299,15 +1321,27 @@ paths:
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: recordStartDate
+          in: query
+          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Send together with recordStartDate.
+          schema:
+            type: string
+            format: date
         - name: startDate
           in: query
-          description: Window start, as `2026-08-28` or a UTC instant with a trailing `Z`.
+          description: Older form. Window start, as a UTC day `2026-08-28` or a UTC instant with a trailing `Z`. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
         - name: endDate
           in: query
-          description: Window end, as `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`.
+          description: Older form. Window end, as a UTC day `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Prefer the record-date pair.
           schema:
             type: string
             format: date-time
