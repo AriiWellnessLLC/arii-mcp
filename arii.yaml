@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "2.2.1"
+  version: "3.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -18,26 +18,29 @@ info:
     - Any question about a patient's markers: `get_user_marker_types_with_data` first, to
       see what this person actually has. Then whichever read the question calls for, scoped
       to those ids with `specificMarkers` — `get_marker_summary_compact` for current values,
-      `get_marker_averages` for a trend, `get_marker_samples` for individual readings,
-      `get_observation_samples` for whether a result is normal for this person. Never fetch
-      observation sample payloads for values.
-    - "Is she hitting her target?" is the one current-value question the compact read cannot
-      answer: it carries no goal. Use `get_marker_summary`, scoped with `specificMarkers` to
-      the markers the question names, where `goal` is inline on each row. Do not look for a
-      separate goal tool.
+      `get_marker_averages_compact` for a trend, `get_marker_samples_compact` for individual
+      readings, `get_observation_samples` for whether a result is normal for this person.
+      Never fetch observation sample payloads for values.
+    - **The three compact marker reads return every source**, one row per source, the
+      person's preferred source first, each naming its `dataSourceName`. The app shows one
+      source per marker; these do not. A marker the preferred source has nothing for still
+      comes back from the source that has it (AIP-350).
+    - "Is she hitting her target?" is `get_marker_averages_compact`, scoped with
+      `specificMarkers` to the markers the question names: each row carries `goal`, `goalGap`
+      and the days that met it. Do not look for a separate goal tool.
     - An open question with no named marker — "how am I doing", "give me a snapshot",
       "what do you have for me" — goes straight to `get_marker_summary_compact` with
-      `select=Abnormal`. It answers over the whole window in a handful of rows. Do not
-      call `get_marker_summary` for these: on a populated chart it returns the entire
-      catalogue in one response and the reply comes back empty (AIP-297).
+      `select=Abnormal`. It answers over the whole window in a handful of rows.
     - `bulk_search_marker_types` when nothing in that list matches the wording, to check
       whether the catalog knows the metric at all. It reads the global catalog, so a hit
       there never means this patient has it.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
-      `select=Abnormal`, whose rows carry `rangeStatus` and `outOfRange`.
-      `get_marker_summary` returns no reference range at all.
+      `select=Abnormal`, whose rows carry `rangeStatus` and `outOfRange`. Every compact row
+      carries `referenceRange`: on `get_marker_summary_compact` the range the row was judged
+      against, on `get_marker_averages_compact` the range on that source's newest reading in
+      the window, and on `get_marker_samples_compact` the range printed with the reading.
     - Lab draw metadata (when was the last panel, observation id): `list_observations`
       with `Type=Lab` and **`IncludeHealthKitSamples=false` only**.
     - Device metrics (steps, HR, sleep): marker tools, scoped to the ids from
@@ -92,7 +95,7 @@ info:
       alone. `StartDate`/`EndDate` on this tool are deprecated instants that must carry a
       trailing `Z` or the API returns 400 — prefer the record-date pair.
     - "Device / daily metrics (steps, HR, sleep)" -> marker tools
-      (`get_marker_summary_compact`, `get_marker_samples`, `get_marker_averages`).
+      (`get_marker_summary_compact`, `get_marker_samples_compact`, `get_marker_averages_compact`).
 
     **Authentication:** JWT Bearer tokens (passthrough from Airia Platform) and API Key
     via `X-API-Key`.
@@ -100,10 +103,13 @@ info:
       translation from Airia profile ID to Arii user ID. No read here needs
       `requestingUserId`, so `get_current_user` is for questions about the requester
       themselves, not a step before a patient read.
-    - Under **API Key**, `requestingUserId` is the only identity the API has, and the reads
-      that take it refuse the call without one — 403 on the marker reads, 400 on
-      `get_user_symptom_details`. The "omit it" guidance on those tools is for
-      Bearer/passthrough.
+    - Under **API Key**, `requestingUserId` is the only identity the API has, and the older
+      reads that take it refuse the call without one (400 on `get_user_symptom_details`).
+      The three compact marker reads
+      (`get_marker_summary_compact`, `get_marker_averages_compact`,
+      `get_marker_samples_compact`) are **Bearer only**: under API Key they return 401, and
+      `requestingUserId` is deprecated and ignored on them. The "omit it" guidance on those
+      tools is for Bearer/passthrough.
     - Airia profile ID to Arii user ID auto-translation exists **only for API Key auth**,
       and some newer endpoints do not support API Key at all.
 
@@ -122,8 +128,8 @@ info:
     you covered.
 
     **Pagination:** 0-based `pageNumber` and `pageSize`. Page sizes and defaults differ per
-    tool and are stated on each. `get_marker_samples` reports `totalCount` and `totalPages`
-    as `1` regardless of the real total — page it with `hasNextPage` only.
+    tool and are stated on each. The three compact marker reads are not paged: they are
+    bounded by their scope, and `get_marker_samples_compact` says `truncated` when it cuts.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
     (`YYYY-MM-DD`). Journals and symptoms take this pair too; prefer it there. `startDate`/
@@ -168,7 +174,7 @@ tags:
   - name: Symptoms
     description: Symptom tracking and reporting
   - name: Markers
-    description: Health marker summaries, averages, and raw samples (aggregated health data)
+    description: Health marker values, trends and individual readings from every source, one row per marker and source
   - name: MarkerTypes
     description: Marker type (biomarker/metric) definitions and lookup
   - name: DataDictionary
@@ -1093,8 +1099,8 @@ paths:
         It is not the general history path. There is no marker filter, so a broad call
         returns every sample of every marker in the window. Keep the date range tight,
         and always set `maxSamplesPerMarker` — for a "is this normal" question, 1 is
-        usually right. For a trend over time use `get_marker_averages`, and for a
-        marker's individual readings use `get_marker_samples`.
+        usually right. For a trend over time use `get_marker_averages_compact`, and for a
+        marker's individual readings use `get_marker_samples_compact`.
 
         Both `recordStartDate` and `recordEndDate` are required as `yyyy-MM-dd`.
 
@@ -1352,180 +1358,81 @@ paths:
   # ===================
   # MARKER ENDPOINTS
   # ===================
-  /api/v2/Marker/summary/{userId}:
-    get:
-      tags: [Markers]
-      operationId: get_marker_summary
-      summary: Get the latest value for each marker in a window
-      description: |
-        Returns the latest value for each marker in a requested time window, including
-        marker ID, name, value, unit, record date, category, and the user's goal for that
-        marker.
-
-        Each row carries two identifiers, adjacent and easy to confuse. `markerTypeId` is
-        the marker type, and is what `specificMarkers` takes on this and every other marker
-        tool. `id` is the summary row's own id and matches nothing anywhere else: sent as
-        `specificMarkers` it returns an empty result rather than an error (AIP-236).
-
-        Category appears three ways on a row. `category` is a coarse quantity-type enum,
-        while `categoryId` and `categoryName` are the resolved `arii.Categories` values.
-        Match on `categoryName`, never on `category`.
-
-        Use for current/latest marker values or a named panel of marker results.
-
-        On a populated chart this returns one row per marker type, thirty-one fields each,
-        with no page size to bound it — enough to exhaust the model's context before it can
-        answer (AIP-297). For an open question such as "how am I doing", call
-        `get_marker_summary_compact` instead. Use this tool when a named panel needs fields
-        the compact row drops — above all `goal`, which makes this the read for "is she
-        hitting her target".
-
-        `goal` is the target for that marker, and `goalIsDefault` says whether it is one the
-        person set or a platform default such as the 10,000-step goal. Do not describe a
-        default as a goal they chose.
-
-        Scope the call with `specificMarkers`, a list of marker type IDs from
-        `get_user_marker_types_with_data` — or from `bulk_search_marker_types` when that list
-        had no match. Without it the tool returns every marker the person has, with no page
-        size to bound the response.
-
-        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
-        either returns 400. There is no named window such as `ThirtyDays`; pass the dates.
-
-        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
-        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
-        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
-
-        If a marker has no reading in the requested window, the tool may return its most
-        recent value from up to one year earlier. Always use the returned `recordDate`; do
-        not describe a carried-forward value as current. Nothing on the row flags that it
-        happened (AIP-237).
-
-        Does not return reference ranges. For a patient-specific range use
-        `get_observation_samples`.
-
-        On a share-based read the start date may be narrowed to the share's own window, so
-        the range covered can be shorter than the one you asked for, with nothing on the
-        response saying so. Read the returned dates rather than assuming your range held.
-
-        If this read fails, say you could not retrieve the data. A failure is never
-        evidence that the person has none.
-      x-mcp-annotations:
-        readOnlyHint: true
-        idempotentHint: true
-      parameters:
-        - $ref: "#/components/parameters/AriiUserIdPath"
-        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
-        - name: recordStartDate
-          in: query
-          required: true
-          description: |
-            Start date as a local calendar date (YYYY-MM-DD). Required together with
-            recordEndDate — the API returns 400 if either is omitted.
-          schema:
-            type: string
-            format: date
-        - name: recordEndDate
-          in: query
-          required: true
-          description: |
-            End date as a local calendar date (YYYY-MM-DD). Required together with
-            recordStartDate — the API returns 400 if either is omitted.
-          schema:
-            type: string
-            format: date
-        - name: specificMarkers
-          in: query
-          description: |
-            Marker type IDs (GUIDs) from `get_user_marker_types_with_data`, or from
-            `bulk_search_marker_types` when that list had no match. Copy each exactly as
-            returned. Without this the tool returns every marker the person has.
-          schema:
-            type: array
-            items:
-              type: string
-              format: uuid
-      responses:
-        "200":
-          description: Marker summary data
-
   /api/v2/Marker/summary-compact/{userId}:
     get:
       tags: [Markers]
       operationId: get_marker_summary_compact
-      summary: Get a context-sized page of a user's current marker values
+      summary: Get a person's current marker values from every source
       description: |
-        Returns a user's current marker values on a row trimmed to twelve fields and
-        bounded by a page, together with the category counts for the whole window.
+        Returns a person's current marker values, one row per marker **and source**, on a
+        row trimmed to fourteen fields, together with the category counts for the window.
 
-        It reads the same underlying values as `get_marker_summary`, but the two do not
-        return the same set by default: `skipFallbackData` is `true` here and `false` there,
-        so markers whose only value would be carried forward from before the window appear
-        in the full summary and not in this one.
+        **Every source.** The app shows one source per marker. This read returns every
+        source that has a value in the window — Apple Health, Oura, Mira, the person's own
+        entries — each on its own row, the person's preferred source first. So a marker the
+        preferred source has nothing for still comes back, from the source that has it. Cite
+        each row by its own `dataSourceName` (AIP-350).
 
-        **This is the default read for an open question about how someone is doing.** The
-        full summary returns one row per marker type with thirty-one fields each and no page
-        size; on a populated chart that exhausts the model's context before it can answer,
-        and the person gets an empty reply (AIP-297). Use `get_marker_summary` only when a
-        named panel needs fields this row does not carry.
+        **This is the default read for an open question about how someone is doing.** For
+        goals, use `get_marker_averages_compact`, whose rows carry them.
 
         Each row has `markerTypeId`, `displayName`, `value`, `unit`, `recordDate`,
-        `categoryName`, `dataSourceName`, `aggregationMethod`, and — where a reference range
-        applies — `rangeStatus` and `outOfRange`. `secondValue` and `textValue` carry
-        blood-pressure style pairs and non-numeric results.
+        `categoryName`, `dataSourceName`, `isPreferredSource`, `aggregationMethod`, and —
+        where a reference range applies — `rangeStatus`, `outOfRange` and `referenceRange`,
+        the range the value was judged against, in the row's `unit`. A row that was not
+        judged has no `referenceRange`. `secondValue` and `textValue` carry blood-pressure
+        style pairs and non-numeric results.
 
-        `dataSourceName` is the one source the row read; readings from any other source are
-        dropped. This row carries no list of the other sources: call
-        `get_marker_data_sources` when the question needs them (AIP-350).
+        `value` is the window's value by `aggregationMethod`: with `Average` or `Sum` it is
+        the average or total over the whole window, dated by the newest reading behind it.
+        Only `Latest` is a single reading. No value is carried forward from before the
+        window: for "when was X last measured", use `select=Stale`.
 
-        It carries **no goal**. For "is she hitting her target", use `get_marker_summary`
-        scoped with `specificMarkers`; its rows have `goal` inline. Do not read a missing
-        goal here as the person not having one.
+        **Not paged.** Every matching row comes back. Scope the call: pass `specificMarkers`
+        (up to 100), `categoryId`, or a `select` other than `All`. An unscoped `select=All`
+        is refused with 400.
 
-        `select=Abnormal` filters on the server, across every marker in the window, to
-        values outside their own reference range. Prefer it for "how am I doing": it answers
-        over the whole chart in a handful of rows, where paging through `All` answers over
-        whatever fraction you managed to read.
+        **Filters, all worked out on the server:**
+        - `select=Abnormal` — values outside their own reference range. Each source is
+          judged on its own, so an out-of-range Oura value shows even when the preferred
+          source's value is in range. Prefer it for "how am I doing": it answers over the
+          whole chart in a handful of rows.
+        - `select=NotInPreferred` — markers the preferred source has nothing for in the
+          window while another source does. The preferred source is always checked, even when
+          `dataSources` leaves it out; its rows are not returned then.
+        - `select=Stale` with `staleDays=N` — markers whose newest reading, in any source, is
+          more than N days before `recordEndDate`. Each row is that source's newest reading,
+          dated, with `aggregationMethod` `Latest`. `categoryId` is refused with it, its
+          rows carry no `categoryName`, and the response's `categoryFacets` is empty and
+          `unclassifiedCount` is 0.
+        - `select=SourcesDisagree` — markers where two sources' values from the same day
+          differ by more than the marker's own trend threshold. Values from different days are
+          a change over time and are not compared. A marker with no trend threshold is never
+          flagged.
+        - `dataSources` — read only these sources.
+        - `categoryId` — one category, taken from `categoryFacets`.
 
-        Rows come back most recent first, so a partial page is the newest readings rather
-        than an arbitrary slice — unlike `get_marker_averages`, which pages by marker type
-        ID. `pageSize` above 200 returns 400 rather than being clamped.
+        Rows come back grouped by marker, the most recently recorded marker first, and within
+        a marker the preferred source first. `markerCount` is the number of markers; rows
+        outnumber it when a marker has more than one source.
 
-        `categoryFacets` counts markers per category across the whole window and carries the
-        `categoryId` to filter by. Facets are counted before `categoryId` is applied, so they
-        keep describing the window rather than the filtered page. This is the one place a
-        category filter works on a name you can read — `categoryName` here is resolved, not
-        the numeric id that `get_user_marker_types_with_data` returns.
+        `categoryFacets` counts markers per category across the window, before `categoryId`
+        is applied. This is the one place a category filter works on a name you can read.
+        `unclassifiedCount` is how many markers no source's value could be judged for — read
+        it before treating a short abnormal list as "everything else was checked".
 
-        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
-        either returns 400.
+        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`.
 
-        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
-        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
-        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
+        `requestingUserId` is deprecated and ignored: the caller is always the session's own
+        identity. This read is Bearer only; under `X-API-Key` it returns 401.
 
-        `specificMarkers` is optional here; without it you get the whole window, which is
-        what the paging and `select` are for. Entries that are unparseable or resolve to no
-        marker type are skipped and returned in `unmatchedIds` (AIP-236); the call is
-        rejected only when no entry parses at all.
-
-        `skipFallbackData` defaults to **true** on this tool, unlike the other marker reads:
-        a value carried forward from before the window is noise when you asked what the
-        window holds. Markers that had only carried-forward data drop out entirely, so this
-        affects `totalCount` and the facets, not just values.
+        `specificMarkers` entries that are unparseable or resolve to no marker type are
+        skipped and returned in `unmatchedIds` (AIP-236); the call is rejected only when no
+        entry parses at all.
 
         On a share-based read the start date may be narrowed to the share's own window, so
         the range covered can be shorter than the one you asked for, with nothing on the
         response saying so. Read the returned dates rather than assuming your range held.
-
-        **Sources.** Each row reads ONE source for its marker, named in `dataSourceName` —
-        the person's chosen source for that marker, or their default — and drops readings
-        from any other. Unlike `get_marker_summary` and `get_marker_averages`, this row
-        carries no `availableSources`. When the question needs the other sources — for a
-        marker returned here, or one with no row at all — call `get_marker_data_sources`
-        with just those marker ids. Any source it lists other than the row's
-        `dataSourceName` was not read: name it as recorded but not included, not as
-        covering the window asked about (AIP-350).
 
         If this read fails, say you could not retrieve the data. A failure is never evidence
         that the person has none.
@@ -1534,7 +1441,6 @@ paths:
         idempotentHint: true
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
-        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
         - name: recordStartDate
           in: query
           required: true
@@ -1552,236 +1458,117 @@ paths:
         - name: specificMarkers
           in: query
           description: |
-            Optional marker type IDs to restrict the page to — the `markerTypeId` field of a
-            row, not its `id`. Bound as strings rather than GUIDs on purpose: unparseable or
-            unknown entries are skipped and returned in `unmatchedIds` instead of failing
-            the call.
+            Up to 100 marker type IDs — the `markerTypeId` field of a row, not its `id`.
+            Bound as strings rather than GUIDs on purpose: unparseable or unknown entries are
+            skipped and returned in `unmatchedIds` instead of failing the call.
           schema:
             type: array
+            maxItems: 100
             items:
               type: string
         - name: categoryId
           in: query
           description: |
-            Restrict rows to one category, using a `categoryId` taken from `categoryFacets`
-            on an unfiltered call. This is a numeric id, not a category name.
+            Restrict rows to one category, using a `categoryId` taken from `categoryFacets`.
+            This is a numeric id, not a category name. Not accepted with `select=Stale`.
           schema:
             type: integer
         - name: select
           in: query
           description: |
-            `All` (default) returns every marker with a value in the window. `Abnormal`
-            returns only values outside their own reference range, filtered on the server
-            across the whole window.
+            `All` (default), `Abnormal`, `NotInPreferred`, `Stale` (needs `staleDays`) or
+            `SourcesDisagree`. See the description for what each keeps.
           schema:
             type: string
-            enum: [All, Abnormal]
+            enum: [All, Abnormal, NotInPreferred, Stale, SourcesDisagree]
             default: All
-        - name: pageNumber
+        - name: staleDays
           in: query
-          description: Zero-based page number (default 0).
+          description: With `select=Stale` only, and required there. 1–3650.
           schema:
             type: integer
-            default: 0
-        - name: pageSize
-          in: query
-          description: Marker types per page (default 50, maximum 200).
-          schema:
-            type: integer
-            default: 50
-            maximum: 200
-        - name: skipFallbackData
+            minimum: 1
+            maximum: 3650
+        - name: dataSources
           in: query
           description: |
-            Defaults to **true** here, unlike the other marker reads: markers whose only
-            value would be carried forward from before the window are dropped. Pass `false`
-            to include them, and then read `recordDate` before calling a value current.
+            Read only these sources, e.g. `Oura`. Omitted reads every source. The names match
+            `dataSourceName` on a row exactly — `AppleHealth`, not "Apple Health". An unknown
+            name is a 400.
+          style: form
+          explode: true
           schema:
-            type: boolean
-            default: true
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthDataSourceName"
       responses:
         "200":
-          description: One page of compact marker rows, with the window's totals and category facets
+          description: Every matching row, with the category facets
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PagedMarkerSummaryCompact"
+                $ref: "#/components/schemas/MarkerSummaryCompactResult"
         "400":
-          description: recordStartDate/recordEndDate missing, or specificMarkers contained no valid marker type IDs
+          description: Dates missing, the call unscoped, specificMarkers empty, over 100 or with no valid id, staleDays missing or misplaced, categoryId with select=Stale, or dataSources empty or naming an unknown source
+        "401":
+          description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
         "403":
           description: Requester is not permitted to read this user's markers
 
-  /api/v2/Marker/averages/{userId}:
+  /api/v2/Marker/averages-compact/{userId}:
     get:
       tags: [Markers]
-      operationId: get_marker_averages
-      summary: Get marker trends over a window
+      operationId: get_marker_averages_compact
+      summary: Get marker trends from every source, with the trend worked out
       description: |
-        Returns trends for specific markers over a time window, including daily averages,
-        per-day values, weekday/weekend averages, highs, lows, and individual log readings.
+        Returns a trend for each named marker, one row per marker **and source**, the
+        person's preferred source first (AIP-350).
 
-        Use for trends and statistical analysis of named markers.
+        **Use this for any trend or "compared to usual" question.** It returns the averages
+        with the arithmetic already done: `direction` (`Up`, `Down` or `Flat`, from a
+        straight-line fit over every daily value, `Flat` when the change is smaller than the
+        marker's own trend threshold) and `change` (in the marker's unit). Report those; do
+        not work the trend out yourself.
 
-        First get the patient's markers with `get_user_marker_types_with_data` — falling back
-        to `bulk_search_marker_types` when nothing there matches — then pass those marker type
-        IDs as `specificMarkers`. Avoid unscoped calls because they can return every
-        marker and its full logs — roughly 11,800 log entries for one patient over 90 days,
-        which no page size fixes (AIP-236).
+        Each row has `markerTypeId`, `displayName`, `unit`, `dataSourceName`,
+        `isPreferredSource`, `dailyAverage`, `weekdayAverage`, `weekendAverage`,
+        `highestSingleDay`, `lowestRange`, `highestRange`, `readingDays` (days with a value),
+        `firstRecordDate`, `lastRecordDate`, `direction`, `change`, `goal`, `goalGap`,
+        `daysMeetingGoal`, `daysMissingGoal`, `baselineAverage`, `displayPrecision` and
+        `referenceRange` — the range on that source's newest reading in the window that
+        carries one, absent when none does. Every number is already rounded to
+        `displayPrecision`.
 
-        `specificMarkers` takes marker type IDs — the `markerTypeId` field of a
-        `get_marker_summary_compact` or `get_marker_summary` row, not the full summary row's
-        own `id`. Copy each one exactly as returned.
+        `lastRecordDate` earlier than the window's end means that source stopped sending:
+        say so. A source with no value in the window has no row.
 
-        Entries that are unparseable, or that resolve to no marker type, are skipped rather
-        than failing the call, and come back in `unmatchedIds`. Read that field: a short
-        result with entries listed there means you sent the wrong ids, which is not the same
-        as the patient having no data. The call is rejected only when no entry parses at
-        all (AIP-236).
+        **Options:**
+        - `groupBy=Week` or `groupBy=Month` — adds `periods`, one average per calendar week
+          (Monday to Sunday) or month, each with its `readingDays`. A period's `periodStart`
+          and `periodEnd` are its first and last days with a value, not the week's or month's
+          bounds. Use it for "month by month" and for any window longer than a few weeks.
+        - `baselineDays=N` — adds `baselineAverage` over the N days before
+          `recordStartDate`, from the same source. "Compared to usual" in one call: a 30-day
+          window with `baselineDays=90` compares the month with the 90 days before it.
+        - Goals: `goalGap` is `dailyAverage − goal`. `daysMeetingGoal` and `daysMissingGoal`
+          count days, when the goal is a floor, a ceiling or a range. Both are null for a
+          single target value, which says nothing about which side is better, and `goal`
+          and `goalGap` are null when the goal is in a unit that cannot be converted to
+          `unit`.
+        - `select=Changing` — only rows whose `direction` is `Up` or `Down`.
+        - `includeChart=true` — adds `chartData`, one `{recordDate, value}` per day with a
+          value. **Off by default. Turn it on only to draw a chart.**
+        - `dataSources` — read only these sources.
 
-        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. Omitting
-        either returns 400.
-
-        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
-        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
-        caller's identity, and omitting it there returns 403 "RequestingUserId is required."
-
-        `pageNumber` is 0-based and `pageSize` is 1-100, default 20. Pages are ordered by
-        marker type ID, so a partial page is not necessarily the most relevant subset.
-
-        `skipFallbackData` defaults to false, so a marker with no reading in the window may
-        be filled from up to a year earlier. Always use the returned dates; do not describe
-        a carried-forward value as current. Pass `true` to exclude them — a marker that had
-        only carried-forward data then drops out of the result entirely, which changes
-        `totalCount` and the paging, not just the values.
-
-        `useWeeklyAggregation` controls chart bucketing. Omit it for the 90-day threshold,
-        `true` for weekly buckets, `false` for daily.
-
-        Each `chartData` point is either one day or one 7-day week. A weekly point carries
-        `bucketStartDate` and `bucketEndDate`, the first and last day of its week; a daily
-        point has neither. Weeks are counted from `recordStartDate`, not calendar weeks, and
-        the last one ends at `recordEndDate`. A week whose readings all fall on one day is
-        dated by that day, so a lab result keeps the day it was taken. Any other week is
-        dated by its first day, and its value sums up the whole week. So when `recordDate`
-        differs from `bucketStartDate`, the point is that day's reading; when they match, it
-        may cover several days. Never give a weekly point's date as the day of a reading
-        unless you know it held one: for exact reading days pass `useWeeklyAggregation=false`,
-        or read them from `get_marker_samples` (AIP-343).
-
-        Each log may contain `metaData.referenceRange`. This is the range printed on the lab
-        report in the reading's stored unit. Report it as stored rather than treating it as
-        a patient-specific range or comparing converted values to it (AIP-238).
+        `specificMarkers` is required, 1–20 ids, from `get_user_marker_types_with_data`.
+        `recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. No value is
+        carried forward from before the window. Not paged.
 
         On a share-based read the start date may be narrowed to the share's own window, so
         the range covered can be shorter than the one you asked for, with nothing on the
-        response saying so. Read the returned dates rather than assuming your range held.
-
-        **Sources.** Each row reads ONE source for its marker, named in `dataSourceName` —
-        the person's chosen source for that marker, or their default — and drops readings
-        from any other. `availableSources` on the same row lists every source this marker
-        has readings from, over the person's whole history, each with `dataSourceName` and,
-        for an aggregator such as Apple Health, `originalSource` (the device inside it). Any
-        source in `availableSources` other than the row's `dataSourceName` was not read: name
-        it as recorded but not included, not as covering the window asked about. A marker
-        with no row here has no `availableSources` to read; for those, call
-        `get_marker_data_sources` (AIP-350).
-
-        If this read fails, say you could not retrieve the data. A failure is never evidence
-        that the person has none.
-      x-mcp-annotations:
-        readOnlyHint: true
-        idempotentHint: true
-      parameters:
-        - $ref: "#/components/parameters/AriiUserIdPath"
-        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
-        - name: recordStartDate
-          in: query
-          required: true
-          description: Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.
-          schema:
-            type: string
-            format: date
-        - name: recordEndDate
-          in: query
-          required: true
-          description: End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.
-          schema:
-            type: string
-            format: date
-        - name: specificMarkers
-          in: query
-          description: |
-            Marker type IDs from `get_user_marker_types_with_data`, or from
-            `bulk_search_marker_types` when that list had no match. **Always send these.**
-            An unscoped call returns every marker with its full logs.
-
-            Bound as strings rather than GUIDs on purpose: one malformed entry no longer
-            rejects the whole call. Unparseable or unknown entries are skipped and returned
-            in `unmatchedIds` (AIP-236).
-          schema:
-            type: array
-            items:
-              type: string
-        - name: pageNumber
-          in: query
-          description: Zero-based page number (default 0).
-          schema:
-            type: integer
-            default: 0
-        - name: pageSize
-          in: query
-          description: Marker types per page (1-100, default 20).
-          schema:
-            type: integer
-            default: 20
-        - name: skipFallbackData
-          in: query
-          description: |
-            Default false, so markers with no reading in the window may be filled from up to
-            a year earlier. `true` drops those markers entirely, changing `totalCount` and
-            the paging as well as the values.
-          schema:
-            type: boolean
-            default: false
-        - name: useWeeklyAggregation
-          in: query
-          description: |
-            Chart bucketing. Omit for the ~90-day threshold, `true` for weekly buckets,
-            `false` for daily. Weekly points carry `bucketStartDate` and `bucketEndDate`;
-            pass `false` for a marker read only now and then, such as a lab result, so each
-            reading comes back on its own day.
-          schema:
-            type: boolean
-      responses:
-        "200":
-          description: Marker averages data
-
-  /api/v2/Marker/samples/{userId}:
-    get:
-      tags: [Markers]
-      operationId: get_marker_samples
-      summary: Get individual readings for a marker
-      description: |
-        Returns individual readings for a marker over a date range, including value, unit,
-        record date, and source.
-
-        Use for the individual historical readings of a marker.
-
-        Scope the call with `specificMarkers`, a list of marker type IDs from
-        `get_user_marker_types_with_data` — or from `bulk_search_marker_types` when that list
-        had no match. Without it the tool returns every marker the person has.
-
-        Both `recordStartDate` and `recordEndDate` are required in `yyyy-MM-dd` format.
-        Omitting either returns 400.
-
-        Use `hasNextPage` for paging. `totalCount` and `totalPages` are always 1.
-
-        `metaData.referenceRange` is the range printed on the lab report in the reading's
-        stored unit.
-
-        On a share-based read the start date may be narrowed to the share's own window, so
-        the range covered can be shorter than the one you asked for, with nothing on the
-        response saying so. Read the returned dates rather than assuming your range held.
+        response saying so. The baseline stops at the share's start too, so `baselineAverage`
+        can cover fewer than `baselineDays` days. Read the returned dates rather than assuming
+        your range held.
 
         If this read fails, say you could not retrieve the data. A failure is never evidence
         that the person has none.
@@ -1793,50 +1580,208 @@ paths:
         - name: recordStartDate
           in: query
           required: true
-          description: Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.
+          description: Start date as a local calendar date (YYYY-MM-DD).
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
           required: true
-          description: End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.
+          description: End date as a local calendar date (YYYY-MM-DD).
           schema:
             type: string
             format: date
         - name: specificMarkers
           in: query
+          required: true
           description: |
-            Marker type IDs (GUIDs) from `get_user_marker_types_with_data`, or from
-            `bulk_search_marker_types` when that list had no match. Copy each exactly as returned.
+            1–20 marker type IDs from `get_user_marker_types_with_data`. Unusable entries are
+            skipped and returned in `unmatchedIds`.
           schema:
             type: array
+            minItems: 1
+            maxItems: 20
             items:
               type: string
-              format: uuid
-        - name: pageNumber
+        - name: select
           in: query
-          description: Zero-based page number (default 0).
+          description: "`All` (default) or `Changing`: only rows whose direction is Up or Down."
+          schema:
+            type: string
+            enum: [All, Changing]
+            default: All
+        - name: groupBy
+          in: query
+          description: "`None` (default), `Week` or `Month`: adds one average per calendar week or month."
+          schema:
+            type: string
+            enum: [None, Week, Month]
+            default: None
+        - name: baselineDays
+          in: query
+          description: Adds `baselineAverage` over this many days before recordStartDate. 1–365.
           schema:
             type: integer
-            default: 0
-        - name: pageSize
+            minimum: 1
+            maximum: 365
+        - name: includeChart
           in: query
-          description: Samples per page, 1-1000 (default 100). Outside that range returns 400.
-          schema:
-            type: integer
-            default: 100
-        - name: filterRawSamples
-          in: query
-          description: |
-            Restrict the result to samples tagged `raw-sample`. Default false, which applies
-            no tag filter.
+          description: Adds the daily points. Off by default; turn it on only to draw a chart.
           schema:
             type: boolean
             default: false
+        - name: dataSources
+          in: query
+          description: |
+            Read only these sources, e.g. `Oura`. Omitted reads every source. The names match
+            `dataSourceName` on a row exactly — `AppleHealth`, not "Apple Health". An unknown
+            name is a 400.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthDataSourceName"
       responses:
         "200":
-          description: Paginated raw marker samples. Page with `hasNextPage`; the totals are always 1.
+          description: One row per marker and source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkerAveragesCompactResult"
+        "400":
+          description: Dates missing, specificMarkers missing, over 20 or with no valid id, baselineDays out of range, or dataSources empty or naming an unknown source
+        "401":
+          description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
+        "403":
+          description: Requester is not permitted to read this user's markers
+
+  /api/v2/Marker/samples-compact/{userId}:
+    get:
+      tags: [Markers]
+      operationId: get_marker_samples_compact
+      summary: Get individual readings from every source
+      description: |
+        Returns individual readings for the named markers from **every source**, by marker,
+        newest first, the preferred source first on the same day (AIP-350).
+
+        **Use this for "latest", "today", "on the 14th" and any individual reading.**
+        - `latestPerSource=true` — only the newest reading per marker per source: "what's
+          her latest HRV" from every source in one call. No window needed; with a window, it
+          is the newest reading inside it.
+        - `takePerSource=N` — the newest N per marker per source, 1–100. No window needed;
+          with a window, the newest N inside it. With `select`, `valueAbove` or `valueBelow`
+          the filter runs first and the newest N matches are kept, which needs a window:
+          "her last 5 out-of-range readings this year" is `takePerSource=5&select=OutOfRange`
+          with the year's dates.
+        - `select=OutOfRange` — only readings outside the reference range they carry.
+        - `valueAbove=X` / `valueBelow=X` — "days her blood pressure was over 140", in the
+          reading's unit.
+        - `dataSources` — read only these sources.
+
+        Each reading has `markerTypeId`, `value`, `secondValue`, `textValue`, `unit`,
+        `recordDate`, `startDate`, `dataSourceName`, `originalSource` (the device inside an
+        aggregator such as Apple Health), `isPreferredSource`, `referenceRange` (the range
+        printed with the reading — a lab report's own range — in the reading's unit, when it
+        carries one; quote it as the report's range), `rangeStatus` and `outOfRange`.
+
+        **Capped at 500 readings, not paged,** shared between the markers so a quiet marker
+        is not crowded out by a busy one. Each marker is read up to its newest 1,000 readings
+        per source in the window, and the filters apply to those. `truncated` is true when
+        either limit cut something: the answer may be missing older readings, which were not
+        read or not returned. Say so, and narrow the window, the markers or the filters to
+        read the rest.
+
+        `specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are
+        required together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is
+        set without `select`, `valueAbove` or `valueBelow`.
+
+        On a share-based read the start date may be narrowed to the share's own window.
+
+        If this read fails, say you could not retrieve the data. A failure is never evidence
+        that the person has none.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: recordStartDate
+          in: query
+          description: Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: End date (YYYY-MM-DD). Passed together with recordStartDate.
+          schema:
+            type: string
+            format: date
+        - name: specificMarkers
+          in: query
+          required: true
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`.
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 20
+            items:
+              type: string
+        - name: latestPerSource
+          in: query
+          description: Only the newest reading per marker per source, inside the window when one is given. Not with takePerSource.
+          schema:
+            type: boolean
+            default: false
+        - name: takePerSource
+          in: query
+          description: Only the newest N readings per marker per source, 1–100, inside the window when one is given. With a filter, the newest N matches. Not with latestPerSource.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: select
+          in: query
+          description: "`All` (default) or `OutOfRange`: only readings outside their reference range."
+          schema:
+            type: string
+            enum: [All, OutOfRange]
+            default: All
+        - name: valueAbove
+          in: query
+          description: Only readings above this value, in the reading's unit.
+          schema:
+            type: number
+        - name: valueBelow
+          in: query
+          description: Only readings below this value, in the reading's unit.
+          schema:
+            type: number
+        - name: dataSources
+          in: query
+          description: |
+            Read only these sources, e.g. `Oura`. Omitted reads every source. The names match
+            `dataSourceName` on a row exactly — `AppleHealth`, not "Apple Health". An unknown
+            name is a 400.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthDataSourceName"
+      responses:
+        "200":
+          description: Readings from every source, capped at 500
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkerSamplesCompactResult"
+        "400":
+          description: specificMarkers missing, over 20 or with no valid id; only one of the two dates; the window missing without latestPerSource/takePerSource, or missing when either is combined with select, valueAbove or valueBelow; both latestPerSource and takePerSource set; takePerSource outside 1–100; or dataSources empty or naming an unknown source
+        "401":
+          description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
+        "403":
+          description: Requester is not permitted to read this user's markers
 
   # ===================
   # MARKER TYPE ENDPOINTS
@@ -2060,14 +2005,15 @@ paths:
         A marker absent from this list is not recorded for this patient, and saying so needs
         no further call. A 403 is an access problem and never an absence.
 
-        It does not say which sources a marker came from. For that, call
-        `get_marker_data_sources` with the ids you matched here.
+        It does not say which sources a marker came from. The compact marker reads do: every
+        row names its own source in `dataSourceName`. Call `get_marker_data_sources` with the
+        ids you matched here only when the question is about the sources themselves, such as
+        "which devices track my sleep?".
 
         Then read what the question calls for, scoped to these ids with `specificMarkers`:
-        `get_marker_summary_compact` for current values, `get_marker_summary` for a named
-        panel that needs `goal`, `get_marker_averages` for a trend, `get_marker_samples` for
-        individual readings, `get_observation_samples` for whether a result is normal for
-        this person.
+        `get_marker_summary_compact` for current values, `get_marker_averages_compact` for a
+        trend or a goal, `get_marker_samples_compact` for individual readings,
+        `get_observation_samples` for whether a result is normal for this person.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -2099,33 +2045,16 @@ paths:
         sorted. It covers the person's whole history, not a window: a source listed here has
         readings for the marker at some time, not necessarily in the period asked about.
 
-        **Why it matters.** Every other marker read — `get_marker_summary`,
-        `get_marker_summary_compact`, `get_marker_averages`, `get_marker_samples` — returns
-        only ONE source per marker: the person's chosen source for that marker, or their
-        default. Readings from every other source are dropped without a word, so a read never
-        tells you they exist. This is the only tool that does.
-
-        **When to call it.** For the markers a read returned **no row** for. A row from
-        `get_marker_averages` or `get_marker_summary` already carries `availableSources`, the
-        same answer, so there is no need to ask again for those. `get_marker_summary_compact`
-        rows carry no such list, so after that read call this for any marker whose other
-        sources the question needs. Send only those marker ids, and reuse the result for the
-        rest of the conversation unless the subject changes.
+        **When to call it.** Rarely. The compact marker reads return every source's values,
+        so they already say which sources a marker has in the window. Call this when the
+        question is about the sources themselves — "which devices track my sleep?" — or to
+        know which sources hold a marker at any time, not only in the window you read.
 
         **Always pass `scope=ExistingData`.** It lists the sources that hold readings. Without
         it the default also lists connected devices that could supply a marker but have sent
         nothing, which would send the person looking for data that does not exist.
 
-        **Reading the result.**
-        - One source: the reads cover it. Nothing else to say about sources.
-        - More than one: the reads return one of them. Say which source the numbers came from
-          and name the others as recorded but not included.
-        - The read came back empty, but this lists sources: this marker has readings recorded
-          in a source the read did not cover. That is not "not recorded" — name those sources,
-          without claiming they cover the period asked about.
-        - An empty list: no readings from any source.
-
-        No tool reads the other sources' values, so name them; do not offer to fetch them.
+        An empty list means no readings from any source.
 
         Pass each id as its own `markerTypeIds` entry, copied from
         `get_user_marker_types_with_data`. Every id you send comes back, with an empty list
@@ -2546,6 +2475,47 @@ components:
           type: string
           format: date-time
 
+    HealthDataSourceName:
+      type: string
+      description: |
+        A source's name, exactly as `dataSourceName` spells it on a compact marker row.
+        Matches the API's `HealthDataSource` enum; a name outside this list is a 400.
+      enum:
+        - Arii
+        - Fitbit
+        - Oura
+        - Withings
+        - AppleHealth
+        - Garmin
+        - Whoop
+        - BioStrap
+        - Strava
+        - HealthConnect
+        - Elation
+        - FreeStyleLibre
+        - Cronometer
+        - Mira
+        - Dexcom
+        - Polar
+        - Omron
+        - HeartMath
+        - InBody
+        - Cerbo
+        - AdvancedMd
+        - OneUpHealth
+        - JunctionLabReport
+        - Kardia
+        - Peloton
+        - Healthie
+        - Athena
+        - HeadsUpV1
+        - HumanApi
+        - Ultrahuman
+        - SamsungHealth
+        - Viome
+        - Zwift
+        - Beurer
+
     MarkerCategoryFacet:
       type: object
       description: One category's marker-type count across the whole requested window.
@@ -2564,7 +2534,7 @@ components:
 
     MarkerSummaryCompact:
       type: object
-      description: One marker's latest value in the window, trimmed for agent reads.
+      description: One marker's value in the window from one source, trimmed for agent reads.
       properties:
         markerTypeId:
           type: string
@@ -2600,6 +2570,16 @@ components:
         dataSourceName:
           type: string
           nullable: true
+          description: The source this row's value came from. A marker has one row per source.
+        isPreferredSource:
+          type: boolean
+          description: True on the person's preferred source's row.
+        referenceRange:
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
+          description: >-
+            The range `rangeStatus` was judged against, in `unit`. Absent when the value was
+            not judged. Quote it as the report's range.
         rangeStatus:
           type: string
           nullable: true
@@ -2608,40 +2588,29 @@ components:
           type: boolean
           description: True when the value falls outside its own reference range.
 
-    PagedMarkerSummaryCompact:
+    MarkerSummaryCompactResult:
       type: object
+      description: Every matching compact row, one per marker and source. Not paged.
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/MarkerSummaryCompact"
-        totalCount:
+        markerCount:
           type: integer
-          description: Marker types in the window after `skipFallbackData` and `select`, before paging.
-        pageNumber:
-          type: integer
-        pageSize:
-          type: integer
-        totalPages:
-          type: integer
-        hasPreviousPage:
-          type: boolean
-        hasNextPage:
-          type: boolean
+          description: Distinct markers in `items`. Rows outnumber it when a marker has more than one source.
         categoryFacets:
           type: array
-          description: Marker-type count per category for the whole window, ordered by count descending.
+          description: Marker count per category for the whole window, ordered by count descending. Empty with `select=Stale`.
           items:
             $ref: "#/components/schemas/MarkerCategoryFacet"
         unclassifiedCount:
           type: integer
           description: |
-            Marker types in the window that carry no reference range, counted over the whole
-            window rather than the page or the selection. With `select=Abnormal` this is how
-            many markers could not be judged at all — read it before treating a short
-            out-of-range list as "everything else was checked and fine". Markers whose
-            *category* did not resolve are not counted here; they group into the facet whose
-            `categoryId` and `categoryName` are both null.
+            Markers in the window no source's value could be judged against a reference range,
+            counted before any selection. With `select=Abnormal` read it before treating a
+            short out-of-range list as "everything else was checked and fine". 0 with
+            `select=Stale`.
         unmatchedIds:
           type: array
           nullable: true
@@ -2649,6 +2618,192 @@ components:
             Entries of `specificMarkers` that were unparseable or resolved to no marker
             type. A short result with entries here means the ids were wrong, not that the
             person has no data.
+          items:
+            type: string
+
+    MarkerAverageCompact:
+      type: object
+      description: One marker's trend over the window from one source. Every number is rounded to `displayPrecision`.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        unit:
+          type: string
+          nullable: true
+        dataSourceName:
+          type: string
+          description: The source these values came from.
+        isPreferredSource:
+          type: boolean
+        dailyAverage:
+          type: number
+        weekdayAverage:
+          type: number
+        weekendAverage:
+          type: number
+        highestSingleDay:
+          type: number
+        lowestRange:
+          type: number
+        highestRange:
+          type: number
+        readingDays:
+          type: integer
+          description: Days in the window with a value.
+        firstRecordDate:
+          type: string
+          format: date
+        lastRecordDate:
+          type: string
+          format: date
+          description: Earlier than the window's end when this source stopped sending.
+        direction:
+          type: string
+          enum: [Flat, Up, Down]
+          description: From a straight-line fit over the daily values. Absent with fewer than two days.
+        change:
+          type: number
+          nullable: true
+          description: Fitted value on the last day minus the first, in `unit`. Null with fewer than two days.
+        goal:
+          type: number
+          nullable: true
+          description: |
+            The goal for this marker, in `unit` and rounded like the other numbers: the person's
+            own goal, or the platform's default when they set none. A goal set in another unit is
+            converted. Null when there is no goal, or no conversion exists for the two units.
+        goalGap:
+          type: number
+          nullable: true
+          description: "`dailyAverage` minus `goal`. Null exactly when `goal` is."
+        daysMeetingGoal:
+          type: integer
+          nullable: true
+          description: Days with a value that met the goal. Null when `goal` is null, for a single-value goal, which has no better side, and for a range goal missing its minimum or maximum.
+        daysMissingGoal:
+          type: integer
+          nullable: true
+          description: Days with a value that missed the goal. Null exactly when `daysMeetingGoal` is.
+        baselineAverage:
+          type: number
+          nullable: true
+          description: |
+            Average over the `baselineDays` days before the window, from the same source. Null
+            when no baseline was asked for, the share leaves no days before the window, or those
+            days hold no values.
+        displayPrecision:
+          type: integer
+          nullable: true
+        referenceRange:
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
+          description: >-
+            The range on the newest reading in the window that carries one, in `unit`. Absent
+            when no reading carries one. Quote it as the report's range.
+        periods:
+          type: array
+          description: With `groupBy` only. One entry per week or month with a value.
+          items:
+            type: object
+            properties:
+              periodStart:
+                type: string
+                format: date
+                description: The period's first day with a value.
+              periodEnd:
+                type: string
+                format: date
+                description: The period's last day with a value.
+              average:
+                type: number
+              readingDays:
+                type: integer
+        chartData:
+          type: array
+          description: With `includeChart=true` only.
+          items:
+            type: object
+            properties:
+              recordDate:
+                type: string
+                format: date
+              value:
+                type: number
+
+    MarkerAveragesCompactResult:
+      type: object
+      properties:
+        items:
+          type: array
+          description: Grouped by marker, preferred source first within a marker.
+          items:
+            $ref: "#/components/schemas/MarkerAverageCompact"
+        unmatchedIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+
+    MarkerSampleCompact:
+      type: object
+      description: One reading from one source.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        value:
+          type: number
+        secondValue:
+          type: number
+          nullable: true
+        textValue:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        recordDate:
+          type: string
+          format: date
+        startDate:
+          type: string
+          format: date-time
+        dataSourceName:
+          type: string
+          nullable: true
+        originalSource:
+          type: string
+          nullable: true
+          description: The device inside an aggregator such as Apple Health, when the source reports one.
+        isPreferredSource:
+          type: boolean
+        referenceRange:
+          allOf:
+            - $ref: "#/components/schemas/PrintedReferenceRange"
+          description: The range printed with the reading, in its unit. Absent when it carries none.
+        rangeStatus:
+          type: string
+          nullable: true
+          description: Band from the range the reading carries. Null means not judged.
+        outOfRange:
+          type: boolean
+
+    MarkerSamplesCompactResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarkerSampleCompact"
+        truncated:
+          type: boolean
+          description: True when more readings existed in the window than were read or returned; the answer may be missing older readings. Say so, and narrow the markers or the window.
+        unmatchedIds:
+          type: array
+          nullable: true
           items:
             type: string
 
@@ -2669,6 +2824,20 @@ components:
           type: integer
         hasNextPage:
           type: boolean
+
+    PrintedReferenceRange:
+      type: object
+      description: >-
+        A range that arrived with a reading, typically the lab report's own, converted to the
+        reading's unit.
+      properties:
+        type:
+          type: string
+          description: The kind of range. Ranges stored today carry "Custom"; it does not name the source.
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferenceRangeSegment"
 
     ReferenceRangeSegment:
       type: object
