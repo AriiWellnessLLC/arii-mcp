@@ -12,7 +12,7 @@ The surface is **read-only**. No `create_*` or other write operation is exposed:
 
 Descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, medication adherence, and clinical notes.
 
-The specification currently defines **30 operations** across **30 paths** and **21 component schemas**, organised into the following domains:
+The specification currently defines **30 operations** across **30 paths** and **27 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
@@ -24,7 +24,7 @@ The specification currently defines **30 operations** across **30 paths** and **
 | `Observations` | Labs, activities, assessments, appointments, and summaries |
 | `Documents` | Health documents with AI-assisted feature extraction |
 | `Symptoms` | Symptom tracking and reporting |
-| `Markers` | Marker summaries (full and compact), out-of-range lab results, averages, and raw samples |
+| `Markers` | Current values, trends and individual readings, from every source the person has, and server-flagged out-of-range lab results |
 | `MarkerTypes` | Biomarker and metric definitions and lookup |
 | `DataDictionary` | Per-user inventory of marker types with recorded data |
 
