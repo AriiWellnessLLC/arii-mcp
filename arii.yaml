@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.0.0"
+  version: "3.1.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -34,6 +34,10 @@ info:
     - `bulk_search_marker_types` when nothing in that list matches the wording, to check
       whether the catalog knows the metric at all. It reads the global catalog, so a hit
       there never means this patient has it.
+    - "Flag anything out of range" / "which labs are abnormal": `get_out_of_range_results`.
+      It flags each result `L` or `H` on the server and names the range's source and the
+      draw date. Band labels on `get_observation_samples` (`segments[].label`) are alert
+      levels, not directions: never report a result as low or high from a label.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -1412,6 +1416,12 @@ paths:
         Only `Latest` is a single reading. No value is carried forward from before the
         window: for "when was X last measured", use `select=Stale`.
 
+        `rangeStatus` is the side of the normal band the row's value is on: `L` below, `H`
+        above, `InRange` inside, null when no range could judge it (null never means normal).
+        The range is the lab report's own when the reading carries one, else the range
+        resolved for this patient — the same judgement `get_out_of_range_results` makes. For
+        the range's source and the draw date, call `get_out_of_range_results`.
+
         **Not paged.** Every matching row comes back. Scope the call: pass `specificMarkers`
         (up to 100), `categoryId`, or a `select` other than `All`. An unscoped `select=All`
         is refused with 400.
@@ -1536,6 +1546,97 @@ paths:
           description: Dates missing, the call unscoped, specificMarkers empty, over 100 or with no valid id, staleDays missing or misplaced, categoryId with select=Stale, or dataSources empty or naming an unknown source
         "401":
           description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
+        "403":
+          description: Requester is not permitted to read this user's markers
+
+  /api/v2/Marker/out-of-range/{userId}:
+    get:
+      tags: [Markers]
+      operationId: get_out_of_range_results
+      summary: List a patient's lab results that are out of range, flagged L or H by the server
+      description: |
+        Returns the person's lab results that sit outside their normal band. Each one has a
+        server-computed `flag`: `L` means below the normal band and `H` means above it. It also
+        has a `severity` (`Borderline` or `OutOfRange`), the normal band's bounds
+        (`normalRange.min` / `normalRange.max`, where null means open on that side), the
+        range's source, and the draw date.
+
+        **Use this whenever you are asked to flag, list or summarise out-of-range lab
+        results.** It is the one read that gives, for each result, the side it is off, the
+        range it was judged against, where that range came from and the draw date. Band
+        labels on `get_observation_samples` (`segments[].label`) are alert levels, not
+        directions: in most ranges "Low" is the in-range green band and "High" is a red band
+        on either side. Never turn a band label into "low" or "high". Take the direction from
+        `flag` only.
+
+        `rangeSource` says whose range decided the flag. `LabReport` is the range printed on
+        the lab report. `Patient`, `Cohort`, `Org` (the practice) and `Platform` (the
+        default) are the resolved tiers; `cohortName` is set for `Cohort`. When the lab report
+        decided the flag and a practice or platform range also applies, that range is in
+        `alternateRange` with its own `flag`. Say which source you used, and give the draw
+        date (`drawDate`) for every flag.
+
+        `sexSpecific` is `Male` or `Female` when the band used was sex-specific. Say so.
+
+        `noRange` lists the results no range could judge, each with a `reason`:
+        `NoRangeDefined`, `SexUnknown` (only sex-specific bands exist and the person has no
+        Male/Female sex on record), `UnitMismatch`, `TextResult` or
+        `UnrecognizedRangeLabels`. For these, say there is no reference range to judge
+        against and give no flag. Never supply a range from general knowledge. A result
+        missing from `results` is only in range if it was counted in `inRangeCount`.
+
+        `latestOnly` (default `true`) judges only each marker's most recent draw in the
+        window. Pass `false` to judge every draw, for "has this been high before". Both
+        dates are optional. Omit them to judge every result on file; `recordEndDate` before
+        `recordStartDate` returns 400. When `truncated` is true the read stopped at its
+        sample cap. Narrow the window, and say the list may be incomplete.
+
+        `documentId` is the uploaded lab report the result was extracted from (null for
+        results from a connector). `observationId` is the lab panel and `sampleId` the result.
+
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity.
+
+        On a share-based read the start date may be narrowed to the share's own window.
+
+        If this read fails, say you could not check the results against their ranges and
+        flag nothing. A failure is never evidence that the results are normal.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: recordStartDate
+          in: query
+          description: Optional first draw date as a local calendar date (YYYY-MM-DD), inclusive.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: Optional last draw date as a local calendar date (YYYY-MM-DD), inclusive.
+          schema:
+            type: string
+            format: date
+        - name: latestOnly
+          in: query
+          description: |
+            `true` (default) judges only each marker's most recent draw in the window.
+            `false` judges every draw.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: The out-of-range results, the in-range count, and the results no range could judge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutOfRangeLabResults"
+        "400":
+          description: recordEndDate is before recordStartDate
         "403":
           description: Requester is not permitted to read this user's markers
 
@@ -2607,10 +2708,11 @@ components:
         rangeStatus:
           type: string
           nullable: true
-          description: Where the value sits against its own reference range. Null when no range applies.
+          enum: [L, H, InRange]
+          description: L below the normal band, H above it, InRange inside it. Null when no range could judge the value — never read null as normal.
         outOfRange:
           type: boolean
-          description: True when the value falls outside its own reference range.
+          description: True when the value is outside its normal band, borderline or further.
 
     MarkerSummaryCompactResult:
       type: object
@@ -2644,6 +2746,151 @@ components:
             person has no data.
           items:
             type: string
+
+    LabNormalRange:
+      type: object
+      description: A normal band. A null bound means the band is open on that side.
+      properties:
+        min:
+          type: number
+          nullable: true
+        max:
+          type: number
+          nullable: true
+
+    AlternateLabRange:
+      type: object
+      description: The practice or platform range that also applies to a result judged by its lab report's range.
+      properties:
+        rangeSource:
+          type: string
+          enum: [LabReport, Patient, Cohort, Org, Platform]
+        cohortName:
+          type: string
+          nullable: true
+        normalRange:
+          $ref: "#/components/schemas/LabNormalRange"
+        flag:
+          type: string
+          nullable: true
+          enum: [L, H]
+          description: The result against this range. Null when it is inside it.
+
+    OutOfRangeLabResult:
+      type: object
+      description: One lab result outside its normal band.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        markerName:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+          nullable: true
+          description: The result's unit. `normalRange` is in the same unit.
+        flag:
+          type: string
+          enum: [L, H]
+          description: L is below the normal band, H is above it. Computed from the bounds, never from a band label.
+        severity:
+          type: string
+          enum: [Borderline, OutOfRange]
+        normalRange:
+          $ref: "#/components/schemas/LabNormalRange"
+        rangeSource:
+          type: string
+          enum: [LabReport, Patient, Cohort, Org, Platform]
+        cohortName:
+          type: string
+          nullable: true
+        sexSpecific:
+          type: string
+          nullable: true
+          enum: [Male, Female]
+        alternateRange:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AlternateLabRange"
+        drawDate:
+          type: string
+          format: date
+          description: The day the sample was taken.
+        sampleId:
+          type: string
+          format: uuid
+        observationId:
+          type: string
+          format: uuid
+          nullable: true
+        documentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The uploaded lab report the result was extracted from, or null.
+        observationSource:
+          type: string
+          nullable: true
+          description: How the result reached the chart, e.g. DocumentExtraction.
+
+    UnjudgedLabResult:
+      type: object
+      description: A lab result no range could judge.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        markerName:
+          type: string
+        value:
+          type: number
+          nullable: true
+        textValue:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        drawDate:
+          type: string
+          format: date
+        reason:
+          type: string
+          enum: [NoRangeDefined, SexUnknown, UnitMismatch, TextResult, UnrecognizedRangeLabels]
+
+    OutOfRangeLabResults:
+      type: object
+      properties:
+        recordStartDate:
+          type: string
+          format: date
+          nullable: true
+        recordEndDate:
+          type: string
+          format: date
+          nullable: true
+        latestOnly:
+          type: boolean
+        evaluatedCount:
+          type: integer
+          description: Results looked at, judged or not.
+        inRangeCount:
+          type: integer
+          description: Judged results inside their normal band.
+        truncated:
+          type: boolean
+          description: True when the read stopped at its sample cap; the lists are then partial.
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutOfRangeLabResult"
+        noRange:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnjudgedLabResult"
 
     MarkerAverageCompact:
       type: object
