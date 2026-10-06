@@ -613,10 +613,9 @@ paths:
         `type` is optional. Omit it for both categories, or pass `Medication` or
         `Supplement` for one.
 
-        Always send `startDate`. Without it the response reaches back to the person's
-        first dose. `endDate` defaults to today in the person's own timezone.
+        `endDate` defaults to today in the person's own timezone.
 
-        Always send `pageSize`, normally 50. A page holds at most that many doses, newest
+        Use a `pageSize` of 50 normally. A page holds at most that many doses, newest
         scheduled dose first. `pageNumber` is 0-based. When `hasNextPage` is `true`, more
         doses exist in the window; ask for the next page only if the question needs
         older doses. For counts and adherence rates, use `get_adherence_stats` instead
