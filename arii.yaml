@@ -1327,10 +1327,17 @@ paths:
       operationId: get_user_symptom_details
       summary: Get symptom details for a user
       description: |
-        Returns symptoms recorded by a user, including symptom, intensity, start date, and
-        end date.
+        Returns a page of symptoms recorded by a user, including symptom, intensity,
+        start date, end date, duration, and durationUnit.
 
-        A missing end date means the symptom is still active.
+        Duration is measured in minutes: 420 means 7 hours. A recorded duration means the
+        symptom has an end; for duration-only records, endDate is startDate plus duration.
+        Legacy stored end dates are preserved. Only when both endDate and duration are null
+        is no end recorded; describe the symptom as ongoing, without inferring clinical status.
+
+        Pages contain at most 100 entries, newest startDate first. pageNumber is zero-based
+        and defaults to 0. Request successive pages until symptomDetails is empty before
+        claiming to have read all entries. No total count or page count is returned.
 
         Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
         and any value sent is discarded. On the legacy `X-API-Key` path it is still the
@@ -1354,6 +1361,14 @@ paths:
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: pageNumber
+          in: query
+          description: Zero-based page number. At most 100 entries per page; an empty symptomDetails list means past the last page.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
         - name: recordStartDate
           in: query
           description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
