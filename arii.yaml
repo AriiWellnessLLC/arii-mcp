@@ -613,9 +613,13 @@ paths:
         `type` is optional. Omit it for both categories, or pass `Medication` or
         `Supplement` for one.
 
-        Always send `startDate`. Without it the response reaches back to the person's
-        first dose, unsorted and uncapped. `endDate` defaults to today in the person's
-        own timezone.
+        `endDate` defaults to today in the person's own timezone.
+
+        Use a `pageSize` of 50 normally. A page holds at most that many doses, newest
+        scheduled dose first. `pageNumber` is 0-based. When `hasNextPage` is `true`, more
+        doses exist in the window; ask for the next page only if the question needs
+        older doses. For counts and adherence rates, use `get_adherence_stats` instead
+        of paging through every dose.
 
         `dateFilterBy` defaults to `ScheduledDate`, which keeps each dose in the day it
         was due. Pass `EffectiveDate` to window taken doses by when they were actually
@@ -643,9 +647,9 @@ paths:
             enum: [Medication, Supplement]
         - name: startDate
           in: query
+          required: true
           description: |
-            Window start. Always send it. A plain `2026-08-28`, or a UTC instant with a
-            trailing `Z`.
+            Window start. A plain `2026-08-28`, or a UTC instant with a trailing `Z`.
           schema:
             type: string
         - name: endDate
@@ -669,9 +673,26 @@ paths:
             type: string
             enum: [ScheduledDate, EffectiveDate]
             default: ScheduledDate
+        - name: pageSize
+          in: query
+          required: true
+          description: Doses per page, 1-100. Send 50 unless the question needs fewer.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: pageNumber
+          in: query
+          description: Page number (0-based, default 0). Sent only with `pageSize`.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
-          description: Dose history grouped by scheduled day
+          description: Dose history grouped by scheduled day, newest first, with `hasNextPage`
+        "400":
+          description: pageSize is outside 1-100, or pageNumber is negative
         "403":
           description: Requester is not permitted to read this user's adherence history
 
@@ -1133,7 +1154,7 @@ paths:
 
         `maxSamplesPerMarker` limits the number of newest samples returned per marker.
 
-        `pageNumber` is 0-based and `pageSize` is 1-1000, default 100. Page with
+        `pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with
         `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
 
         If this read fails, say you could not retrieve the data. A failure is never
@@ -1196,9 +1217,11 @@ paths:
             default: 0
         - name: pageSize
           in: query
-          description: Page size (1-1000, default 100).
+          description: Page size (1-100, default 100). The API accepts up to 1000; agents keep to 100 so one result stays small.
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 100
       responses:
         "200":
