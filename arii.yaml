@@ -26,8 +26,8 @@ info:
       source per marker; these do not. A marker the preferred source has nothing for still
       comes back from the source that has it (AIP-350).
     - "Is she hitting her target?" is `get_marker_averages_compact`, scoped with
-      `specificMarkers` to the markers the question names: each row carries `goal`, `goalGap`
-      and the days that met it. Do not look for a separate goal tool.
+      `specificMarkers` to the markers the question names: each row carries `goalType`, `goalMinValue`, `goalMaxValue`
+      and the days that met the goal. Do not look for a separate goal tool.
     - An open question with no named marker — "how am I doing", "give me a snapshot",
       "what do you have for me" — goes straight to `get_marker_summary_compact` with
       `select=Abnormal`. It answers over the whole window in a handful of rows.
@@ -1672,7 +1672,7 @@ paths:
         Each row has `markerTypeId`, `displayName`, `unit`, `dataSourceName`,
         `isPreferredSource`, `dailyAverage`, `weekdayAverage`, `weekendAverage`,
         `highestSingleDay`, `lowestRange`, `highestRange`, `readingDays` (days with a value),
-        `firstRecordDate`, `lastRecordDate`, `direction`, `change`, `goal`, `goalGap`,
+        `firstRecordDate`, `lastRecordDate`, `direction`, `change`, `goalType`, `goalMinValue`, `goalMaxValue`,
         `daysMeetingGoal`, `daysMissingGoal`, `baselineAverage`, `displayPrecision` and
         `referenceRange` — the range on that source's newest reading in the window that
         carries one, absent when none does. Every number is already rounded to
@@ -1689,11 +1689,15 @@ paths:
         - `baselineDays=N` — adds `baselineAverage` over the N days before
           `recordStartDate`, from the same source. "Compared to usual" in one call: a 30-day
           window with `baselineDays=90` compares the month with the 90 days before it.
-        - Goals: `goalGap` is `dailyAverage − goal`. `daysMeetingGoal` and `daysMissingGoal`
-          count days, when the goal is a floor, a ceiling or a range. Both are null for a
-          single target value, which says nothing about which side is better, and `goal`
-          and `goalGap` are null when the goal is in a unit that cannot be converted to
-          `unit`.
+        - Goals: compare `dailyAverage` with the inclusive `goalMinValue` and `goalMaxValue`.
+          A missing side is open. `goalType` is Range, SpecificValue (equal bounds),
+          MinimumThreshold (minimum only), or MaximumThreshold (maximum only).
+          A value is inside when it satisfies every supplied bound; otherwise it is below
+          the minimum or above the maximum. Describe a Range goal as a range, never one target.
+          For example, 450 minutes is inside a 420–540-minute sleep goal (7–9 hours).
+          `daysMeetingGoal` and `daysMissingGoal` count days for floors, ceilings and ranges.
+          Both are null for a SpecificValue target, which has no better side.
+          Goal metadata is absent when no goal or unit conversion applies; do not grade that row.
         - `select=Changing` — only rows whose `direction` is `Up` or `Down`.
         - `includeChart=true` — adds `chartData`, one `{recordDate, value}` per day with a
           value. **Off by default. Turn it on only to draw a chart.**
@@ -2953,21 +2957,20 @@ components:
           type: number
           nullable: true
           description: Fitted value on the last day minus the first, in `unit`. Null with fewer than two days.
-        goal:
+        goalType:
+          type: string
+          enum: [SpecificValue, MinimumThreshold, MaximumThreshold, Range]
+          description: The goal comparison type. Absent without a goal comparable in `unit`.
+        goalMinValue:
           type: number
-          nullable: true
-          description: |
-            The goal for this marker, in `unit` and rounded like the other numbers: the person's
-            own goal, or the platform's default when they set none. A goal set in another unit is
-            converted. Null when there is no goal, or no conversion exists for the two units.
-        goalGap:
+          description: Inclusive lower bound in `unit`, rounded like dailyAverage. Absent for a ceiling or no comparable goal.
+        goalMaxValue:
           type: number
-          nullable: true
-          description: "`dailyAverage` minus `goal`. Null exactly when `goal` is."
+          description: Inclusive upper bound in `unit`, rounded like dailyAverage. Absent for a floor or no comparable goal.
         daysMeetingGoal:
           type: integer
           nullable: true
-          description: Days with a value that met the goal. Null when `goal` is null, for a single-value goal, which has no better side, and for a range goal missing its minimum or maximum.
+          description: Days with a value that met the goal. Null when no comparable goal applies, for a single-value goal, which has no better side, and for a range goal missing its minimum or maximum.
         daysMissingGoal:
           type: integer
           nullable: true
