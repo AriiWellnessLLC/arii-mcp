@@ -1697,7 +1697,7 @@ paths:
           For example, 450 minutes is inside a 420–540-minute sleep goal (7–9 hours).
           `daysMeetingGoal` and `daysMissingGoal` count days for floors, ceilings and ranges.
           Both are null for a SpecificValue target, which has no better side.
-          Goal metadata is absent when no goal or unit conversion applies; do not grade that row.
+          Goal metadata is null when no goal or unit conversion applies; do not grade that row.
         - `select=Changing` — only rows whose `direction` is `Up` or `Down`.
         - `includeChart=true` — adds `chartData`, one `{recordDate, value}` per day with a
           value. **Off by default. Turn it on only to draw a chart.**
@@ -2959,14 +2959,17 @@ components:
           description: Fitted value on the last day minus the first, in `unit`. Null with fewer than two days.
         goalType:
           type: string
+          nullable: true
           enum: [SpecificValue, MinimumThreshold, MaximumThreshold, Range]
-          description: The goal comparison type. Absent without a goal comparable in `unit`.
+          description: The goal comparison type. Null without a goal comparable in `unit`.
         goalMinValue:
           type: number
-          description: Inclusive lower bound in `unit`, rounded like dailyAverage. Absent for a ceiling or no comparable goal.
+          nullable: true
+          description: Inclusive lower bound in `unit`, rounded like dailyAverage. Null for a ceiling or no comparable goal.
         goalMaxValue:
           type: number
-          description: Inclusive upper bound in `unit`, rounded like dailyAverage. Absent for a floor or no comparable goal.
+          nullable: true
+          description: Inclusive upper bound in `unit`, rounded like dailyAverage. Null for a floor or no comparable goal.
         daysMeetingGoal:
           type: integer
           nullable: true
