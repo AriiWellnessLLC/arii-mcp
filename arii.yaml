@@ -126,6 +126,11 @@ info:
     refusal is an access problem, never evidence that the person has no data. Tracked as
     AIP-233.
 
+    On the four marker reads, a partial grant is reported rather than silent (AIP-216).
+    `withheldIds` names the requested markers outside your access, and `accessRestricted`
+    says a read that named no markers covered only what you may see. Say those markers are
+    outside your access to this person; never that the data is missing.
+
     **Share windows.** When access comes from a personal share rather than self or group,
     the start date of a dated read may be narrowed to the share's own window. The response
     does not say it happened. Read the dates that come back before describing the period
@@ -1550,7 +1555,9 @@ paths:
 
         `specificMarkers` entries that are unparseable or resolve to no marker type are
         skipped and returned in `unmatchedIds` (AIP-236); the call is rejected only when no
-        entry parses at all.
+        entry parses at all. Entries that are real markers outside your access to this person
+        are returned in `withheldIds`; without `specificMarkers`, `accessRestricted: true` says
+        the read covered only what you may see.
 
         On a share-based read the start date may be narrowed to the share's own window, so
         the range covered can be shorter than the one you asked for, with nothing on the
@@ -1582,7 +1589,8 @@ paths:
           description: |
             Up to 100 marker type IDs — the `markerTypeId` field of a row, not its `id`.
             Bound as strings rather than GUIDs on purpose: unparseable or unknown entries are
-            skipped and returned in `unmatchedIds` instead of failing the call.
+            skipped and returned in `unmatchedIds` instead of failing the call. Markers
+            outside your access to this person are returned in `withheldIds`.
           schema:
             type: array
             maxItems: 100
@@ -1672,6 +1680,11 @@ paths:
         `UnrecognizedRangeLabels`. For these, say there is no reference range to judge
         against and give no flag. Never supply a range from general knowledge. A result
         missing from `results` is only in range if it was counted in `inRangeCount`.
+
+        When `accessRestricted` is true, your access to this person covers only some marker
+        types, so lab results outside it were never read. An empty or short `results` then
+        does not mean nothing is out of range: say the check covered only the results you
+        are allowed to see.
 
         `latestOnly` (default `true`) judges only each marker's most recent draw in the
         window. Pass `false` to judge every draw, for "has this been high before". Both
@@ -1809,7 +1822,8 @@ paths:
           required: true
           description: |
             1–20 marker type IDs from `get_user_marker_types_with_data`. Unusable entries are
-            skipped and returned in `unmatchedIds`.
+            skipped and returned in `unmatchedIds`; markers outside your access to this person
+            are returned in `withheldIds`.
           schema:
             type: array
             minItems: 1
@@ -1933,7 +1947,7 @@ paths:
         - name: specificMarkers
           in: query
           required: true
-          description: 1–20 marker type IDs from `get_user_marker_types_with_data`.
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.
           schema:
             type: array
             minItems: 1
@@ -2834,6 +2848,25 @@ components:
             person has no data.
           items:
             type: string
+        withheldIds:
+          type: array
+          nullable: true
+          description: |
+            Entries of `specificMarkers` that are real marker types this caller may not read
+            for this person. Omitted when nothing was withheld. Say those markers are outside
+            your access to this person; never say the data is missing or could not be
+            retrieved. Whether the person has readings for them is not known from this.
+          items:
+            type: string
+            format: uuid
+        accessRestricted:
+          type: boolean
+          description: |
+            True when your access to this person covers only some marker types (a personal
+            share) and the read named no markers, so it could not list what it held back.
+            Omitted when false. When true, a missing marker or an empty list may be outside
+            your access rather than absent from the record: say the answer covers only what
+            you are allowed to see.
 
     LabNormalRange:
       type: object
@@ -2979,6 +3012,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UnjudgedLabResult"
+        accessRestricted:
+          type: boolean
+          description: |
+            True when your access to this person covers only some marker types (a personal
+            share) and the read named no markers, so it could not list what it held back.
+            Omitted when false. When true, a missing marker or an empty list may be outside
+            your access rather than absent from the record: say the answer covers only what
+            you are allowed to see.
 
     MarkerAverageCompact:
       type: object
@@ -3105,6 +3146,17 @@ components:
           nullable: true
           items:
             type: string
+        withheldIds:
+          type: array
+          nullable: true
+          description: |
+            Entries of `specificMarkers` that are real marker types this caller may not read
+            for this person. Omitted when nothing was withheld. Say those markers are outside
+            your access to this person; never say the data is missing or could not be
+            retrieved. Whether the person has readings for them is not known from this.
+          items:
+            type: string
+            format: uuid
 
     MarkerSampleCompact:
       type: object
@@ -3165,6 +3217,17 @@ components:
           nullable: true
           items:
             type: string
+        withheldIds:
+          type: array
+          nullable: true
+          description: |
+            Entries of `specificMarkers` that are real marker types this caller may not read
+            for this person. Omitted when nothing was withheld. Say those markers are outside
+            your access to this person; never say the data is missing or could not be
+            retrieved. Whether the person has readings for them is not known from this.
+          items:
+            type: string
+            format: uuid
 
     PagedObservations:
       type: object
