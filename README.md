@@ -12,7 +12,7 @@ The surface is **read-only**. No `create_*` or other write operation is exposed:
 
 Descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, medication adherence, and clinical notes.
 
-The specification currently defines **31 operations** across **31 paths** and **28 component schemas**, organised into the following domains:
+The specification currently defines **31 operations** across **31 paths** and **31 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
