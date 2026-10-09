@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.2.0"
+  version: "3.3.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1121,13 +1121,17 @@ paths:
         Use when you need a patient-specific reference range for a named marker — the
         question "is this result normal for this person?". That is what this tool is for.
 
-        It is not the general history path. There is no marker filter, so a broad call
-        returns every sample of every marker in the window. Keep the date range tight,
-        and always set `maxSamplesPerMarker` — for a "is this normal" question, 1 is
-        usually right. For a trend over time use `get_marker_averages_compact`, and for a
-        marker's individual readings use `get_marker_samples_compact`.
+        It is not the general history path. Scope the read to an exact `observationId`,
+        one or more `markerTypeIds`, or both. A call without `markerTypeIds` can return
+        every marker in the selected observation or date window. Always set
+        `maxSamplesPerMarker` — for a "is this normal" question, 1 is usually right.
+        For a trend over time use `get_marker_averages_compact`, and for a marker's
+        individual readings use `get_marker_samples_compact`.
 
-        Both `recordStartDate` and `recordEndDate` are required as `yyyy-MM-dd`.
+        To read one observation, send its `observationId`; dates may then be omitted.
+        Otherwise both `recordStartDate` and `recordEndDate` are required as
+        `yyyy-MM-dd`. Send both dates or neither — a partial pair does not narrow the
+        observation-scoped read. Repeat `markerTypeIds` for each marker GUID to include.
 
         `observationTypes` uses exact matching against the observation type name. The
         full set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,
@@ -1172,17 +1176,42 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: observationId
+          in: query
+          description: |
+            Optional observation GUID from `list_observations`. Use this for an exact
+            lab, scan, assessment, or other observation read. When present, the date
+            range may be omitted.
+          schema:
+            type: string
+            format: uuid
+        - name: markerTypeIds
+          in: query
+          description: |
+            Optional nonempty marker filter. Repeat the query parameter for each marker
+            GUID. Combine with `observationId` to read selected markers from one
+            observation.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            items:
+              type: string
+              format: uuid
         - name: recordStartDate
           in: query
-          required: true
-          description: Patient local calendar start day (YYYY-MM-DD). Required with recordEndDate.
+          description: |
+            Patient local calendar start day (YYYY-MM-DD). Send together with
+            `recordEndDate`; both dates may be omitted when `observationId` is present.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
-          required: true
-          description: Patient local calendar end day (YYYY-MM-DD). Required with recordStartDate.
+          description: |
+            Patient local calendar end day (YYYY-MM-DD). Send together with
+            `recordStartDate`; both dates may be omitted when `observationId` is present.
           schema:
             type: string
             format: date
@@ -1231,7 +1260,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/PagedObservationSamples"
         "400":
-          description: recordStartDate and recordEndDate are both required
+          description: |
+            Invalid paging, date range, marker filter, or sample cap; both record dates
+            are required unless observationId is provided
         "403":
           description: Requester is not permitted to read this user's samples
 

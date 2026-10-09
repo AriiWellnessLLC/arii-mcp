@@ -69,6 +69,16 @@ Validate the specification before opening a pull request:
 npx @redocly/cli lint arii.yaml
 ```
 
+Check the observation sample tool's query and response contract using a JSON bundle:
+
+```bash
+npx @redocly/cli bundle arii.yaml --output /tmp/arii-contract.json
+ARII_OPENAPI_BUNDLE=/tmp/arii-contract.json python3 -B -m unittest discover -s tests -v
+```
+
+These checks use Python's standard library. They validate the catalog, not live API
+filtering or gateway ingestion.
+
 Confirm every declared route still exists on the API before merging. A route that answers `401` exists and requires authentication; a `404` means the operation is not there:
 
 ```bash
