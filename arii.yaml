@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.2.0"
+  version: "5.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -38,6 +38,10 @@ info:
       It flags each result `L` or `H` on the server and names the range's source and the
       draw date. Band labels on `get_observation_samples` (`segments[].label`) are alert
       levels, not directions: never report a result as low or high from a label.
+    - **"How many" is answered from `totalCount`.** A read that returns `totalCount` carries
+      the server's count of the records matching the request beside the rows. Quote it.
+      Never count the rows: a long list is easy to miscount, and a paged read such as
+      `list_observations` returns one page of a larger total (AIP-413).
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -134,13 +138,15 @@ info:
     **Pagination:** 0-based `pageNumber` and `pageSize`. Page sizes and defaults differ per
     tool and are stated on each. The three compact marker reads are not paged: they are
     bounded by their scope, and `get_marker_samples_compact` says `truncated` when it cuts.
+    Some record reads are not paged either; their description says so, and they return every
+    record in the window with `totalCount`.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
-    (`YYYY-MM-DD`). Journals and symptoms take this pair too; prefer it there. `startDate`/
-    `endDate` are instants, but on journals, symptoms and dose history a plain calendar day
-    is accepted too and covers the whole of that day in UTC, not in the patient's timezone;
-    on observations it still returns 400 without a trailing `Z` (`2026-08-28T00:00:00Z`).
-    Each tool states which it takes.
+    (`YYYY-MM-DD`). Prefer them wherever a tool offers them; some reads take only these, and
+    either one alone leaves that side open. `startDate`/`endDate` are instants. On dose
+    history a plain calendar day is accepted too and covers the whole of that day in UTC, not
+    in the patient's timezone; on observations it still returns 400 without a trailing `Z`
+    (`2026-08-28T00:00:00Z`). Each tool states which it takes.
 
     **Errors:** `get_current_user` returns 401 if unauthenticated and 404 if the JWT has
     no linked Arii user. Wrong ID kind (Airia profile ID / Keycloak `sub` as `userId`)
@@ -290,28 +296,31 @@ paths:
   # ===================
   # JOURNAL ENDPOINTS
   # ===================
-  /api/v1/Journal/{userId}:
+  /api/v1/Journal/{userId}/journals-compact:
     get:
       tags: [Journal]
       operationId: get_user_journals
-      summary: Get journal entries for a user
+      summary: Get every journal entry for a user in a date window, with the count
       description: |
-        Returns journal entries written by a user over a date range.
+        Returns every journal entry a user wrote over a date range, with `totalCount`, the
+        number of entries in the window. Not paged: the list is the whole window.
 
         Use for the user's own written account of how they were feeling or what they
         experienced, not for measured health data.
 
-        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`. They are the
-        patient's own calendar days, and the end day is covered in full. Sending only one of
-        them returns 400. The pair takes priority over `date`, `startDate` and `endDate`.
+        **For how many, quote `totalCount`.** Never count the entries yourself: a long list
+        is easy to miscount, and the server has already counted it.
 
-        `startDate` and `endDate` are the older form. A plain calendar day such as
-        `2026-08-28` is read as a UTC day, so for a patient outside UTC it can miss or add
-        entries near midnight. A UTC instant such as `2026-08-28T00:00:00Z` is used exactly
-        as sent.
+        Send `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the
+        patient's own calendar days, and the end day is covered in full. Either alone leaves
+        that side open: for the whole record, send `recordEndDate` as today and no start.
+        Neither, or a start after the end, returns 400.
 
-        When no entries match, this returns 404 with a message, not an empty list. Read
-        that as no entries for the filter, not as an error.
+        No entries in the window returns `totalCount: 0` and an empty list. That means
+        nothing was written in the window, not that the read failed.
+
+        Each entry carries its full `content`, so `get_journal` is not needed to read the
+        text. A field with nothing recorded is left out of the entry.
 
         Treat journal content as the user's account; it may differ from measured health
         data.
@@ -322,45 +331,29 @@ paths:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - name: recordStartDate
           in: query
-          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
+          description: Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
-          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Send together with recordStartDate.
+          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.
           schema:
             type: string
             format: date
-        - name: date
-          in: query
-          description: Filter a single UTC day, as `2026-08-28`. A UTC instant is also accepted. Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
-        - name: startDate
-          in: query
-          description: Older form. Window start, as a UTC day `2026-08-28` or a UTC instant with a trailing `Z`. Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
-        - name: endDate
-          in: query
-          description: Older form. Window end, as a UTC day `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
       responses:
         "200":
-          description: List of journal entries
+          description: Every journal entry in the window, and how many there are
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/JournalDto"
+                $ref: "#/components/schemas/JournalsCompactResult"
+        "400":
+          description: Neither recordStartDate nor recordEndDate sent, or the start is after the end
+        "403":
+          description: Requester is not permitted to read this user's journal
         "404":
-          description: No entries matched the filter. Not an error.
+          description: No such user
 
   /api/v1/Journal/journal/{journalId}:
     get:
@@ -962,6 +955,11 @@ paths:
         returns the most recent rows, which may answer a different question.
 
         `PageNumber` is 0-based and `PageSize` is 1-100, default 10.
+
+        **For how many, quote `totalCount`.** It counts every observation matching the
+        request, across all pages. A page holds at most `PageSize` rows, so counting the
+        rows comes out short as soon as there is a second page, and a long page is easy to
+        miscount.
 
         **Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside
         every matching event. One lab panel came back at 288,000 characters; a ten-panel
@@ -2465,6 +2463,71 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    JournalsCompactResult:
+      type: object
+      description: Every journal entry in the window, not paged, and how many there are.
+      properties:
+        totalCount:
+          type: integer
+          description: The number of entries in `journals`. Quote this for how many.
+        journals:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalCompact"
+
+    JournalCompact:
+      type: object
+      description: One journal entry. A field with nothing recorded is left out.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Journal entry ID
+        journalDate:
+          type: string
+          format: date-time
+          description: When the entry was written
+        title:
+          type: string
+          description: Journal title
+        content:
+          type: string
+          description: The entry's full text
+        activityResponses:
+          type: array
+          description: Answers to the entry's activity questions, when it has any.
+          items:
+            $ref: "#/components/schemas/JournalActivityResponseCompact"
+
+    JournalActivityResponseCompact:
+      type: object
+      description: |
+        One answer to a journal activity question. Only the value the answer was given in is
+        present: a yes/no, a number, text, a date and time, or chosen options.
+      properties:
+        category:
+          type: string
+          description: The question's category, e.g. `Nutrition` or `MentalWellbeing`.
+        displayText:
+          type: string
+          description: The question the answer belongs to.
+        booleanValue:
+          type: boolean
+        numericValue:
+          type: number
+          description: The numeric answer, in `unit`.
+        textValue:
+          type: string
+        timestampValue:
+          type: string
+          format: date-time
+        selectorValue:
+          type: string
+          description: The chosen options, as the JSON string the app stored.
+        unit:
+          type: string
+          description: The unit of `numericValue`.
 
     MealNutritionSample:
       type: object
