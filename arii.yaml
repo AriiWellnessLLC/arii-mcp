@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.2.0"
+  version: "6.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -395,29 +395,35 @@ paths:
   # ===================
   # MEAL ENDPOINTS
   # ===================
-  /api/v1/Meals/{userId}:
+  /api/v1/Meals/{userId}/meals-compact:
     get:
       tags: [Meals]
       operationId: get_user_meals
-      summary: Get all meals for a user
+      summary: Get every meal for a user in a date window, with the count
       description: |
-        Returns meals recorded by a user over a date range, including their attached
-        nutrition data.
+        Returns every meal a user recorded over a date range, with its nutrition, and
+        `totalCount`, the number of meals in the window. Not paged: the list is the whole
+        window.
 
-        Nutrition arrives in `healthKitSamples`. Each entry carries `quantityTypeName`
-        (`TotalFats`, `DietaryFiber`, `DietaryProtein`, …) — read that. The integer
-        `quantityType` beside it is the same value (1 carbohydrates, 3 energy, 4 fibre,
-        5 protein, 6 sodium, 7 total fat, 13 sugar) and is only for clients that predate
-        the name. Never infer a nutrient from the order entries arrive in: fibre and total
-        fat, and carbohydrates and protein, are easy to transpose and the reply gives the
-        reader no way to notice.
+        **For how many, quote `totalCount`.** Never count the meals yourself: a long list
+        is easy to miscount, and the server has already counted it.
 
-        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`.
+        Nutrition arrives in `healthKitSamples`, one entry per nutrient. Read each entry's
+        `quantityTypeName` (`TotalFats`, `DietaryFiber`, `DietaryProtein`, …). Never infer a
+        nutrient from the order entries arrive in: fibre and total fat, and carbohydrates and
+        protein, are easy to transpose and the reply gives the reader no way to notice.
 
-        When no meals match, this returns 404 with a message, not an empty list. That is
-        the tool saying it found no records for the filter — it is not an error, and it
-        does not mean the person did not eat. Dietary marker data can exist without meal
-        records.
+        Send `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the
+        patient's own calendar days, and the end day is covered in full. Either alone leaves
+        that side open: for the whole record, send `recordEndDate` as today and no start.
+        Neither, or a start after the end, returns 400.
+
+        No meals in the window returns `totalCount: 0` and an empty list. That is not an
+        error, and it does not mean the person did not eat. Dietary marker data can exist
+        without meal records.
+
+        A field with nothing recorded is left out of the meal. A meal with no `dataSource`
+        was entered by hand.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -425,45 +431,29 @@ paths:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - name: recordStartDate
           in: query
-          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
+          description: Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
-          description: Patient local calendar end day (YYYY-MM-DD). Send together with recordStartDate.
+          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.
           schema:
             type: string
             format: date
-        - name: date
-          in: query
-          description: Filter by specific date (ISO 8601). Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
-        - name: startDate
-          in: query
-          description: Filter start date (ISO 8601). Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
-        - name: endDate
-          in: query
-          description: Filter end date (ISO 8601). Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
       responses:
         "200":
-          description: List of meals
+          description: Every meal in the window, and how many there are
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/MealDto"
+                $ref: "#/components/schemas/MealsCompactResult"
+        "400":
+          description: Neither recordStartDate nor recordEndDate sent, or the start is after the end
+        "403":
+          description: Requester is not permitted to read this user's meals
         "404":
-          description: No meals matched the filter. Not an error, and not proof the person did not eat.
+          description: No such user
 
   /api/v1/Meals/meal/{mealId}:
     get:
@@ -2547,6 +2537,80 @@ components:
           items:
             $ref: "#/components/schemas/MealNutritionSample"
 
+
+    MealsCompactResult:
+      type: object
+      description: Every meal in the window, not paged, and how many there are.
+      properties:
+        totalCount:
+          type: integer
+          description: The number of meals in `meals`. Quote this for how many.
+        meals:
+          type: array
+          items:
+            $ref: "#/components/schemas/MealCompact"
+
+    MealCompact:
+      type: object
+      description: One meal. A field with nothing recorded is left out.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Meal ID
+        name:
+          type: string
+          description: Meal name
+        description:
+          type: string
+          description: Meal description
+        date:
+          type: string
+          format: date-time
+          description: When the meal was eaten
+        portionSizeExact:
+          type: number
+          description: Number of servings, including fractions such as 0.5
+        servingSizeImperial:
+          type: number
+          description: Imperial serving size
+        servingUnitImperial:
+          type: string
+          description: Imperial serving unit
+        servingSizeMetric:
+          type: number
+          description: Metric serving size
+        servingUnitMetric:
+          type: string
+          description: Metric serving unit
+        dataSource:
+          type: string
+          description: The source that created the meal. Absent when the meal was entered by hand.
+        loggingMethod:
+          type: string
+          description: How the meal was logged. Absent when unknown.
+          enum: [Photo, Text, Barcode, Manual, Recipe]
+        healthKitSamples:
+          type: array
+          description: The meal's nutrition, one entry per nutrient. Read each entry's `quantityTypeName`.
+          items:
+            $ref: "#/components/schemas/MealNutrientCompact"
+
+    MealNutrientCompact:
+      type: object
+      description: One nutrient recorded against a meal, named by `quantityTypeName`.
+      properties:
+        quantityTypeName:
+          type: string
+          description: >-
+            The nutrient's name, e.g. `TotalFats`, `DietaryFiber`, `DietaryProtein`,
+            `DietaryCarbohydrates`, `DietaryEnergy`, `DietarySodium`, `DietarySugar`.
+        value:
+          type: number
+          description: The recorded amount, in `unit`.
+        unit:
+          type: string
+          description: Unit as recorded — g for macros, mg for sodium, kcal for energy.
 
     NoteDto:
       type: object
