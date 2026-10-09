@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.1.0"
+  version: "3.2.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1254,7 +1254,8 @@ paths:
 
         Does not return the document's contents, and does not return the extracted values
         themselves — only how many there are. It cannot be used to quote or interpret a
-        report. To read a lab's numbers use the marker tools.
+        report. To read what a document says use `search_user_documents`. To read a lab's
+        numbers use the marker tools.
 
         Returns a plain list, not a page.
 
@@ -1297,6 +1298,79 @@ paths:
       responses:
         "200":
           description: Documents with extracted features
+
+  /api/v2/Documents/search:
+    post:
+      tags: [Documents]
+      operationId: search_user_documents
+      summary: Search the text of a user's uploaded documents
+      description: |
+        Searches what a user's uploaded documents say and returns the matching passages.
+
+        Use to read or quote a document on the selected user's file — a lab report, a letter,
+        an imaging summary. This is the tool for a clinician reading a patient's documents:
+        the data store search tools only ever see the uploads of the person chatting, so on a
+        clinician's turn they return the clinician's own files, never the patient's.
+
+        The search runs as the selected user, so it returns that user's files and no one
+        else's. The caller must be allowed to read that user's records; a caller who is not
+        gets 403 and no search runs.
+
+        Each passage carries its `text`, a similarity `score`, and the document it came from:
+        `documentId`, `documentName`, `uploadedAt` and `downloadUrl`. Quote the passage text
+        and cite the document by name. A passage from an uploaded note has no `documentId`
+        and carries the stored file name.
+
+        An empty list means nothing matched the query in that user's documents. It does not
+        mean the user has no documents — `get_user_documents` lists those. Search again with
+        the clinical term rather than the user's wording before reporting that a document does
+        not mention something.
+
+        To search one document, call `get_user_documents` first and pass its `id` in
+        `documentIds`. Ids that do not belong to the selected user are ignored; when none
+        belong to them, nothing is searched and the list is empty.
+
+        Does not return extracted lab values. To read a lab's numbers as data use the marker
+        tools.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [selectedUserId, query]
+              properties:
+                selectedUserId:
+                  type: string
+                  format: uuid
+                  description: Arii user ID whose documents to search. Not an Airia profile ID.
+                query:
+                  type: string
+                  description: The search text. Use the clinical term — "ferritin", not "my iron".
+                documentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Optional. Document IDs from `get_user_documents` to search within; all of the user's documents when omitted.
+      responses:
+        "200":
+          description: The matching passages, each with the document it came from
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentSearchPassage"
+        "400":
+          description: selectedUserId is missing or query is empty
+        "403":
+          description: The caller may not read this user's documents; no search ran
+        "503":
+          description: Document search is not configured for the caller's group
 
   # ===================
   # SYMPTOM ENDPOINTS
@@ -3354,6 +3428,36 @@ components:
           type: boolean
         hasNextPage:
           type: boolean
+
+    DocumentSearchPassage:
+      type: object
+      description: One passage of a user's document that matched a `search_user_documents` query.
+      properties:
+        documentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The document, as `get_user_documents` lists it. Null for a passage from an uploaded note.
+        documentName:
+          type: string
+          nullable: true
+          description: The document's name. Cite the document by this.
+        uploadedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the document was uploaded (UTC).
+        downloadUrl:
+          type: string
+          nullable: true
+          description: Link to the original file.
+        text:
+          type: string
+          description: The passage text, as stored in the document.
+        score:
+          type: number
+          nullable: true
+          description: Similarity of the passage to the query; higher is closer.
 
   securitySchemes:
     apiKeyAuth:
