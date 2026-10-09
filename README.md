@@ -12,7 +12,7 @@ The surface is **read-only**. No `create_*` or other write operation is exposed:
 
 Descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, medication adherence, and clinical notes.
 
-The specification currently defines **29 operations** across **29 paths** and **22 component schemas**, organised into the following domains:
+The specification currently defines **31 operations** across **31 paths** and **28 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
@@ -24,7 +24,7 @@ The specification currently defines **29 operations** across **29 paths** and **
 | `Observations` | Labs, activities, assessments, appointments, and summaries |
 | `Documents` | Health documents with AI-assisted feature extraction |
 | `Symptoms` | Symptom tracking and reporting |
-| `Markers` | Current values, trends and individual readings, from every source the person has |
+| `Markers` | Current values, trends and individual readings, from every source the person has, and server-flagged out-of-range lab results |
 | `MarkerTypes` | Biomarker and metric definitions and lookup |
 | `DataDictionary` | Per-user inventory of marker types with recorded data |
 
@@ -68,6 +68,16 @@ Validate the specification before opening a pull request:
 ```bash
 npx @redocly/cli lint arii.yaml
 ```
+
+Check the observation sample tool's query and response contract using a JSON bundle:
+
+```bash
+npx @redocly/cli bundle arii.yaml --output /tmp/arii-contract.json
+ARII_OPENAPI_BUNDLE=/tmp/arii-contract.json python3 -B -m unittest discover -s tests -v
+```
+
+These checks use Python's standard library. They validate the catalog, not live API
+filtering or gateway ingestion.
 
 Confirm every declared route still exists on the API before merging. A route that answers `401` exists and requires authentication; a `404` means the operation is not there:
 

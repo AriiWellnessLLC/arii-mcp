@@ -4,7 +4,7 @@
 # failure is in the action's README:
 # https://github.com/AriiWellnessLLC/infra-pipelines/tree/main/actions/qa-gate
 #
-# Until 2026-10-10 this only warns: a failing verdict still reports green and says "would block".
+# This check blocks: a failing verdict fails the job. It warned only, from 2026-09-29 until this change.
 # On a pull request the check judges wrongly, add the label `qa-gate-override` and comment one
 # line saying why. Every override is posted to Slack, so skipping the gate stays visible.
 #
@@ -73,8 +73,7 @@ jobs:
 
       - uses: AriiWellnessLLC/infra-pipelines/actions/qa-gate@main
         with:
-          warn-only: 'true'
-          warn-until: '2026-10-10'
+          warn-only: 'false'
           jira-email: ${{ secrets.JIRA_EMAIL }}
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           slack-bot-token: ${{ secrets.QA_GATE_SLACK_BOT_TOKEN }}

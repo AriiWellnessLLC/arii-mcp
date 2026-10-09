@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "3.1.0"
+  version: "3.3.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -34,6 +34,10 @@ info:
     - `bulk_search_marker_types` when nothing in that list matches the wording, to check
       whether the catalog knows the metric at all. It reads the global catalog, so a hit
       there never means this patient has it.
+    - "Flag anything out of range" / "which labs are abnormal": `get_out_of_range_results`.
+      It flags each result `L` or `H` on the server and names the range's source and the
+      draw date. Band labels on `get_observation_samples` (`segments[].label`) are alert
+      levels, not directions: never report a result as low or high from a label.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -609,9 +613,13 @@ paths:
         `type` is optional. Omit it for both categories, or pass `Medication` or
         `Supplement` for one.
 
-        Always send `startDate`. Without it the response reaches back to the person's
-        first dose, unsorted and uncapped. `endDate` defaults to today in the person's
-        own timezone.
+        `endDate` defaults to today in the person's own timezone.
+
+        Use a `pageSize` of 50 normally. A page holds at most that many doses, newest
+        scheduled dose first. `pageNumber` is 0-based. When `hasNextPage` is `true`, more
+        doses exist in the window; ask for the next page only if the question needs
+        older doses. For counts and adherence rates, use `get_adherence_stats` instead
+        of paging through every dose.
 
         `dateFilterBy` defaults to `ScheduledDate`, which keeps each dose in the day it
         was due. Pass `EffectiveDate` to window taken doses by when they were actually
@@ -639,9 +647,9 @@ paths:
             enum: [Medication, Supplement]
         - name: startDate
           in: query
+          required: true
           description: |
-            Window start. Always send it. A plain `2026-08-28`, or a UTC instant with a
-            trailing `Z`.
+            Window start. A plain `2026-08-28`, or a UTC instant with a trailing `Z`.
           schema:
             type: string
         - name: endDate
@@ -665,9 +673,26 @@ paths:
             type: string
             enum: [ScheduledDate, EffectiveDate]
             default: ScheduledDate
+        - name: pageSize
+          in: query
+          required: true
+          description: Doses per page, 1-100. Send 50 unless the question needs fewer.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: pageNumber
+          in: query
+          description: Page number (0-based, default 0). Sent only with `pageSize`.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
-          description: Dose history grouped by scheduled day
+          description: Dose history grouped by scheduled day, newest first, with `hasNextPage`
+        "400":
+          description: pageSize is outside 1-100, or pageNumber is negative
         "403":
           description: Requester is not permitted to read this user's adherence history
 
@@ -1133,7 +1158,7 @@ paths:
 
         `maxSamplesPerMarker` limits the number of newest samples returned per marker.
 
-        `pageNumber` is 0-based and `pageSize` is 1-1000, default 100. Page with
+        `pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with
         `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
 
         If this read fails, say you could not retrieve the data. A failure is never
@@ -1221,9 +1246,11 @@ paths:
             default: 0
         - name: pageSize
           in: query
-          description: Page size (1-1000, default 100).
+          description: Page size (1-100, default 100). The API accepts up to 1000; agents keep to 100 so one result stays small.
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 100
       responses:
         "200":
@@ -1258,7 +1285,8 @@ paths:
 
         Does not return the document's contents, and does not return the extracted values
         themselves — only how many there are. It cannot be used to quote or interpret a
-        report. To read a lab's numbers use the marker tools.
+        report. To read what a document says use `search_user_documents`. To read a lab's
+        numbers use the marker tools.
 
         Returns a plain list, not a page.
 
@@ -1302,6 +1330,79 @@ paths:
         "200":
           description: Documents with extracted features
 
+  /api/v2/Documents/search:
+    post:
+      tags: [Documents]
+      operationId: search_user_documents
+      summary: Search the text of a user's uploaded documents
+      description: |
+        Searches what a user's uploaded documents say and returns the matching passages.
+
+        Use to read or quote a document on the selected user's file — a lab report, a letter,
+        an imaging summary. This is the tool for a clinician reading a patient's documents:
+        the data store search tools only ever see the uploads of the person chatting, so on a
+        clinician's turn they return the clinician's own files, never the patient's.
+
+        The search runs as the selected user, so it returns that user's files and no one
+        else's. The caller must be allowed to read that user's records; a caller who is not
+        gets 403 and no search runs.
+
+        Each passage carries its `text`, a similarity `score`, and the document it came from:
+        `documentId`, `documentName`, `uploadedAt` and `downloadUrl`. Quote the passage text
+        and cite the document by name. A passage from an uploaded note has no `documentId`
+        and carries the stored file name.
+
+        An empty list means nothing matched the query in that user's documents. It does not
+        mean the user has no documents — `get_user_documents` lists those. Search again with
+        the clinical term rather than the user's wording before reporting that a document does
+        not mention something.
+
+        To search one document, call `get_user_documents` first and pass its `id` in
+        `documentIds`. Ids that do not belong to the selected user are ignored; when none
+        belong to them, nothing is searched and the list is empty.
+
+        Does not return extracted lab values. To read a lab's numbers as data use the marker
+        tools.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [selectedUserId, query]
+              properties:
+                selectedUserId:
+                  type: string
+                  format: uuid
+                  description: Arii user ID whose documents to search. Not an Airia profile ID.
+                query:
+                  type: string
+                  description: The search text. Use the clinical term — "ferritin", not "my iron".
+                documentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Optional. Document IDs from `get_user_documents` to search within; all of the user's documents when omitted.
+      responses:
+        "200":
+          description: The matching passages, each with the document it came from
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentSearchPassage"
+        "400":
+          description: selectedUserId is missing or query is empty
+        "403":
+          description: The caller may not read this user's documents; no search ran
+        "503":
+          description: Document search is not configured for the caller's group
+
   # ===================
   # SYMPTOM ENDPOINTS
   # ===================
@@ -1331,10 +1432,17 @@ paths:
       operationId: get_user_symptom_details
       summary: Get symptom details for a user
       description: |
-        Returns symptoms recorded by a user, including symptom, intensity, start date, and
-        end date.
+        Returns a page of symptoms recorded by a user, including symptom, intensity,
+        start date, end date, duration, and durationUnit.
 
-        A missing end date means the symptom is still active.
+        Duration is measured in minutes: 420 means 7 hours. A recorded duration means the
+        symptom has an end; for duration-only records, endDate is startDate plus duration.
+        Legacy stored end dates are preserved. Only when both endDate and duration are null
+        is no end recorded; describe the symptom as ongoing, without inferring clinical status.
+
+        Pages contain at most 100 entries, newest startDate first. pageNumber is zero-based
+        and defaults to 0. Request successive pages until symptomDetails is empty before
+        claiming to have read all entries. No total count or page count is returned.
 
         Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
         and any value sent is discarded. On the legacy `X-API-Key` path it is still the
@@ -1358,6 +1466,14 @@ paths:
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: pageNumber
+          in: query
+          description: Zero-based page number. At most 100 entries per page; an empty symptomDetails list means past the last page.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
         - name: recordStartDate
           in: query
           description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
@@ -1418,6 +1534,12 @@ paths:
         the average or total over the whole window, dated by the newest reading behind it.
         Only `Latest` is a single reading. No value is carried forward from before the
         window: for "when was X last measured", use `select=Stale`.
+
+        `rangeStatus` is the side of the normal band the row's value is on: `L` below, `H`
+        above, `InRange` inside, null when no range could judge it (null never means normal).
+        The range is the lab report's own when the reading carries one, else the range
+        resolved for this patient — the same judgement `get_out_of_range_results` makes. For
+        the range's source and the draw date, call `get_out_of_range_results`.
 
         **Not paged.** Every matching row comes back. Scope the call: pass `specificMarkers`
         (up to 100), `categoryId`, or a `select` other than `All`. An unscoped `select=All`
@@ -1543,6 +1665,97 @@ paths:
           description: Dates missing, the call unscoped, specificMarkers empty, over 100 or with no valid id, staleDays missing or misplaced, categoryId with select=Stale, or dataSources empty or naming an unknown source
         "401":
           description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
+        "403":
+          description: Requester is not permitted to read this user's markers
+
+  /api/v2/Marker/out-of-range/{userId}:
+    get:
+      tags: [Markers]
+      operationId: get_out_of_range_results
+      summary: List a patient's lab results that are out of range, flagged L or H by the server
+      description: |
+        Returns the person's lab results that sit outside their normal band. Each one has a
+        server-computed `flag`: `L` means below the normal band and `H` means above it. It also
+        has a `severity` (`Borderline` or `OutOfRange`), the normal band's bounds
+        (`normalRange.min` / `normalRange.max`, where null means open on that side), the
+        range's source, and the draw date.
+
+        **Use this whenever you are asked to flag, list or summarise out-of-range lab
+        results.** It is the one read that gives, for each result, the side it is off, the
+        range it was judged against, where that range came from and the draw date. Band
+        labels on `get_observation_samples` (`segments[].label`) are alert levels, not
+        directions: in most ranges "Low" is the in-range green band and "High" is a red band
+        on either side. Never turn a band label into "low" or "high". Take the direction from
+        `flag` only.
+
+        `rangeSource` says whose range decided the flag. `LabReport` is the range printed on
+        the lab report. `Patient`, `Cohort`, `Org` (the practice) and `Platform` (the
+        default) are the resolved tiers; `cohortName` is set for `Cohort`. When the lab report
+        decided the flag and a practice or platform range also applies, that range is in
+        `alternateRange` with its own `flag`. Say which source you used, and give the draw
+        date (`drawDate`) for every flag.
+
+        `sexSpecific` is `Male` or `Female` when the band used was sex-specific. Say so.
+
+        `noRange` lists the results no range could judge, each with a `reason`:
+        `NoRangeDefined`, `SexUnknown` (only sex-specific bands exist and the person has no
+        Male/Female sex on record), `UnitMismatch`, `TextResult` or
+        `UnrecognizedRangeLabels`. For these, say there is no reference range to judge
+        against and give no flag. Never supply a range from general knowledge. A result
+        missing from `results` is only in range if it was counted in `inRangeCount`.
+
+        `latestOnly` (default `true`) judges only each marker's most recent draw in the
+        window. Pass `false` to judge every draw, for "has this been high before". Both
+        dates are optional. Omit them to judge every result on file; `recordEndDate` before
+        `recordStartDate` returns 400. When `truncated` is true the read stopped at its
+        sample cap. Narrow the window, and say the list may be incomplete.
+
+        `documentId` is the uploaded lab report the result was extracted from (null for
+        results from a connector). `observationId` is the lab panel and `sampleId` the result.
+
+        Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
+        and any value sent is discarded. On the legacy `X-API-Key` path it is still the
+        caller's identity.
+
+        On a share-based read the start date may be narrowed to the share's own window.
+
+        If this read fails, say you could not check the results against their ranges and
+        flag nothing. A failure is never evidence that the results are normal.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
+        - name: recordStartDate
+          in: query
+          description: Optional first draw date as a local calendar date (YYYY-MM-DD), inclusive.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: Optional last draw date as a local calendar date (YYYY-MM-DD), inclusive.
+          schema:
+            type: string
+            format: date
+        - name: latestOnly
+          in: query
+          description: |
+            `true` (default) judges only each marker's most recent draw in the window.
+            `false` judges every draw.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: The out-of-range results, the in-range count, and the results no range could judge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutOfRangeLabResults"
+        "400":
+          description: recordEndDate is before recordStartDate
         "403":
           description: Requester is not permitted to read this user's markers
 
@@ -2614,10 +2827,11 @@ components:
         rangeStatus:
           type: string
           nullable: true
-          description: Where the value sits against its own reference range. Null when no range applies.
+          enum: [L, H, InRange]
+          description: L below the normal band, H above it, InRange inside it. Null when no range could judge the value — never read null as normal.
         outOfRange:
           type: boolean
-          description: True when the value falls outside its own reference range.
+          description: True when the value is outside its normal band, borderline or further.
 
     MarkerSummaryCompactResult:
       type: object
@@ -2651,6 +2865,151 @@ components:
             person has no data.
           items:
             type: string
+
+    LabNormalRange:
+      type: object
+      description: A normal band. A null bound means the band is open on that side.
+      properties:
+        min:
+          type: number
+          nullable: true
+        max:
+          type: number
+          nullable: true
+
+    AlternateLabRange:
+      type: object
+      description: The practice or platform range that also applies to a result judged by its lab report's range.
+      properties:
+        rangeSource:
+          type: string
+          enum: [LabReport, Patient, Cohort, Org, Platform]
+        cohortName:
+          type: string
+          nullable: true
+        normalRange:
+          $ref: "#/components/schemas/LabNormalRange"
+        flag:
+          type: string
+          nullable: true
+          enum: [L, H]
+          description: The result against this range. Null when it is inside it.
+
+    OutOfRangeLabResult:
+      type: object
+      description: One lab result outside its normal band.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        markerName:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+          nullable: true
+          description: The result's unit. `normalRange` is in the same unit.
+        flag:
+          type: string
+          enum: [L, H]
+          description: L is below the normal band, H is above it. Computed from the bounds, never from a band label.
+        severity:
+          type: string
+          enum: [Borderline, OutOfRange]
+        normalRange:
+          $ref: "#/components/schemas/LabNormalRange"
+        rangeSource:
+          type: string
+          enum: [LabReport, Patient, Cohort, Org, Platform]
+        cohortName:
+          type: string
+          nullable: true
+        sexSpecific:
+          type: string
+          nullable: true
+          enum: [Male, Female]
+        alternateRange:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AlternateLabRange"
+        drawDate:
+          type: string
+          format: date
+          description: The day the sample was taken.
+        sampleId:
+          type: string
+          format: uuid
+        observationId:
+          type: string
+          format: uuid
+          nullable: true
+        documentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The uploaded lab report the result was extracted from, or null.
+        observationSource:
+          type: string
+          nullable: true
+          description: How the result reached the chart, e.g. DocumentExtraction.
+
+    UnjudgedLabResult:
+      type: object
+      description: A lab result no range could judge.
+      properties:
+        markerTypeId:
+          type: string
+          format: uuid
+        markerName:
+          type: string
+        value:
+          type: number
+          nullable: true
+        textValue:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        drawDate:
+          type: string
+          format: date
+        reason:
+          type: string
+          enum: [NoRangeDefined, SexUnknown, UnitMismatch, TextResult, UnrecognizedRangeLabels]
+
+    OutOfRangeLabResults:
+      type: object
+      properties:
+        recordStartDate:
+          type: string
+          format: date
+          nullable: true
+        recordEndDate:
+          type: string
+          format: date
+          nullable: true
+        latestOnly:
+          type: boolean
+        evaluatedCount:
+          type: integer
+          description: Results looked at, judged or not.
+        inRangeCount:
+          type: integer
+          description: Judged results inside their normal band.
+        truncated:
+          type: boolean
+          description: True when the read stopped at its sample cap; the lists are then partial.
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutOfRangeLabResult"
+        noRange:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnjudgedLabResult"
 
     MarkerAverageCompact:
       type: object
@@ -3100,6 +3459,36 @@ components:
           type: boolean
         hasNextPage:
           type: boolean
+
+    DocumentSearchPassage:
+      type: object
+      description: One passage of a user's document that matched a `search_user_documents` query.
+      properties:
+        documentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The document, as `get_user_documents` lists it. Null for a passage from an uploaded note.
+        documentName:
+          type: string
+          nullable: true
+          description: The document's name. Cite the document by this.
+        uploadedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the document was uploaded (UTC).
+        downloadUrl:
+          type: string
+          nullable: true
+          description: Link to the original file.
+        text:
+          type: string
+          description: The passage text, as stored in the document.
+        score:
+          type: number
+          nullable: true
+          description: Similarity of the passage to the query; higher is closer.
 
   securitySchemes:
     apiKeyAuth:
