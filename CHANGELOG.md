@@ -6,7 +6,7 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
-## 3.3.0 — unreleased
+## 6.1.0 — unreleased
 
 Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
 
