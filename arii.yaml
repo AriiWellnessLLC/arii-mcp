@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "7.0.0"
+  version: "7.1.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1416,6 +1416,12 @@ paths:
 
         No entries in the window returns `totalCount: 0` and an empty list.
 
+        **To find a symptom that is still going**, for example when the person says it got
+        worse, send its catalog ID from `list_symptoms` in `symptomIds` with `open: true`
+        and `recordEndDate` as today. Only that symptom's entries with neither `endDate`
+        nor `duration` come back, so an empty list means none is open. Never look for the
+        open entry in the full list yourself.
+
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
       x-mcp-annotations:
@@ -1436,6 +1442,19 @@ paths:
           schema:
             type: string
             format: date
+        - name: symptomIds
+          in: query
+          description: Only entries of these symptoms. Catalog IDs from `list_symptoms`. Omit for every symptom.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - name: open
+          in: query
+          description: When true, only entries still going, with neither endDate nor duration. Omit or false for every entry.
+          schema:
+            type: boolean
       responses:
         "200":
           description: Every symptom entry in the window, and how many there are
