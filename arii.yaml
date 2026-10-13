@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "6.1.0"
+  version: "7.1.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1414,37 +1414,38 @@ paths:
         "200":
           description: List of available symptoms
 
-  /api/v1/users/{userId}/symptom-details:
+  /api/v1/users/{userId}/symptom-details-compact:
     get:
       tags: [Symptoms]
       operationId: get_user_symptom_details
-      summary: Get symptom details for a user
+      summary: Get every symptom a user recorded in a date window, with the count
       description: |
-        Returns a page of symptoms recorded by a user, including symptom, intensity,
-        start date, end date, duration, and durationUnit.
+        Returns every symptom a user recorded over a date range, newest start first, with
+        `totalCount`, the number of entries in the window. Not paged: the list is the whole
+        window. Each entry carries `symptomName`, `symptomCategory`, `intensity` (0-10),
+        `notes`, `startDate`, `endDate` and `duration`; a field with nothing recorded is
+        left out.
 
-        Duration is measured in minutes: 420 means 7 hours. A recorded duration means the
-        symptom has an end; for duration-only records, endDate is startDate plus duration.
-        Legacy stored end dates are preserved. Only when both endDate and duration are null
-        is no end recorded; describe the symptom as ongoing, without inferring clinical status.
+        **For how many, quote `totalCount`.** Never count the entries yourself: a long list
+        is easy to miscount, and the server has already counted it.
 
-        Pages contain at most 100 entries, newest startDate first. pageNumber is zero-based
-        and defaults to 0. Request successive pages until symptomDetails is empty before
-        claiming to have read all entries. No total count or page count is returned.
+        `duration` is in minutes: 420 means 7 hours. A recorded duration means the symptom
+        has an end; for duration-only records, `endDate` is `startDate` plus `duration`.
+        Legacy stored end dates are preserved. Only when both `endDate` and `duration` are
+        absent is no end recorded; describe the symptom as ongoing, without inferring
+        clinical status.
 
         Omit `requestingUserId` under Bearer/passthrough: the session identifies the caller
         and any value sent is discarded. On the legacy `X-API-Key` path it is still the
         caller's identity, and omitting it there returns 400 "RequestingUserId parameter is
         required."
 
-        Use `recordStartDate` and `recordEndDate` together as `yyyy-MM-dd`. They are the
-        patient's own calendar days, and the end day is covered in full. Sending only one of
-        them returns 400. The pair takes priority over `startDate` and `endDate`.
+        Send `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the
+        patient's own calendar days, and the end day is covered in full. Either alone leaves
+        that side open: for the whole record, send `recordEndDate` as today and no start.
+        Neither, or a start after the end, returns 400.
 
-        `startDate` and `endDate` are the older form. A plain calendar day such as
-        `2026-08-28` is read as a UTC day, so for a patient outside UTC it can miss or add
-        entries near midnight. A UTC instant such as `2026-08-28T00:00:00Z` is used exactly
-        as sent.
+        No entries in the window returns `totalCount: 0` and an empty list.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
@@ -1454,41 +1455,29 @@ paths:
       parameters:
         - $ref: "#/components/parameters/AriiUserIdPath"
         - $ref: "#/components/parameters/AriiRequestingUserIdQuery"
-        - name: pageNumber
-          in: query
-          description: Zero-based page number. At most 100 entries per page; an empty symptomDetails list means past the last page.
-          schema:
-            type: integer
-            format: int32
-            minimum: 0
-            default: 0
         - name: recordStartDate
           in: query
-          description: Patient local calendar start day (YYYY-MM-DD). Send together with recordEndDate.
+          description: Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
-          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Send together with recordStartDate.
+          description: Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.
           schema:
             type: string
             format: date
-        - name: startDate
-          in: query
-          description: Older form. Window start, as a UTC day `2026-08-28` or a UTC instant with a trailing `Z`. Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
-        - name: endDate
-          in: query
-          description: Older form. Window end, as a UTC day `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Prefer the record-date pair.
-          schema:
-            type: string
-            format: date-time
       responses:
         "200":
-          description: User symptom details
+          description: Every symptom entry in the window, and how many there are
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSymptomDetailsCompactResult"
+        "400":
+          description: Neither recordStartDate nor recordEndDate sent, or the start is after the end
+        "403":
+          description: Requester is not permitted to read this user's symptoms
 
   # ===================
   # MARKER ENDPOINTS
@@ -2886,6 +2875,50 @@ components:
         - Viome
         - Zwift
         - Beurer
+
+    UserSymptomDetailsCompactResult:
+      type: object
+      description: Every symptom entry in the window, not paged, newest start first, and how many there are.
+      properties:
+        totalCount:
+          type: integer
+          description: The number of entries in `symptomDetails`. Quote this for how many.
+        symptomDetails:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSymptomDetailCompact"
+
+    UserSymptomDetailCompact:
+      type: object
+      description: One recorded symptom. A field with nothing recorded is left out.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Symptom entry ID
+        symptomName:
+          type: string
+          description: The symptom's name, e.g. `Headache`
+        symptomCategory:
+          type: string
+          description: The symptom's category
+        intensity:
+          type: integer
+          description: Intensity, 0-10
+        notes:
+          type: string
+          description: The person's notes
+        startDate:
+          type: string
+          format: date-time
+          description: When the symptom started
+        endDate:
+          type: string
+          format: date-time
+          description: When it ended — the stored end, or `startDate` plus `duration`. Absent when neither is recorded.
+        duration:
+          type: integer
+          description: How long it lasted, in minutes. Absent when not recorded.
 
     MarkerCategoryFacet:
       type: object
