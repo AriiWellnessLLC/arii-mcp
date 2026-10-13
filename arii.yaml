@@ -1417,10 +1417,10 @@ paths:
         No entries in the window returns `totalCount: 0` and an empty list.
 
         **To find a symptom that is still going**, for example when the person says it got
-        worse, send its catalog ID from `list_symptoms` in `symptomIds` with `open: true`
-        and `recordEndDate` as today. Only that symptom's entries with neither `endDate`
-        nor `duration` come back, so an empty list means none is open. Never look for the
-        open entry in the full list yourself.
+        worse, send `open: true` and `recordEndDate` as today, with no `symptomIds`. Only
+        entries with neither `endDate` nor `duration` come back, usually a few, and each
+        carries its `symptomName`; match the symptom by name there. If none matches, none
+        is open. Never look for the open entry in the full record yourself.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
