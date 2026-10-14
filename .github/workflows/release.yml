@@ -1,6 +1,6 @@
 name: "Release"
 
-run-name: "Release ${{ inputs.ref || 'main' }} · by:${{ github.actor }}"
+run-name: "Release ${{ inputs.ref || 'main' }} · ${{ inputs.dry_run && 'dry run' || 'for real' }} · by:${{ github.actor }}"
 
 # Tags the arii.yaml that was uploaded to the Arii MCP catalog, and publishes it as a GitHub Release.
 #
@@ -12,12 +12,20 @@ run-name: "Release ${{ inputs.ref || 'main' }} · by:${{ github.actor }}"
 #   - it publishes the GitHub Release v<version>, with that version's CHANGELOG.md section as its
 #     notes and a "Deployed:" line to fill in by hand with the upload date.
 #
+# A dry run (the default) reads the version and the changelog section, shows the release notes it
+# would publish, and creates neither tag nor release.
+#
 # Idempotent: a tag that already points at the commit is kept, and a release that exists is left as
 # it is. A tag of the same version on another commit stops the run, because a version names one spec.
 
 on:
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: "Dry run: show the tag and release notes it would create, and create nothing."
+        required: false
+        type: boolean
+        default: true
       ref:
         description: "The commit that was uploaded: a SHA, or main. Its arii.yaml version names the release."
         required: false
@@ -52,7 +60,37 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing arii.yaml $VERSION from \`${SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: What a real run would create (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if EXISTING=$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}"); then
+            [ "$EXISTING" = "$SHA" ] && STATE="already names this commit" || STATE="names ${EXISTING:0:7}, so a real run would stop"
+          else
+            STATE="would be created on ${SHA:0:7}"
+          fi
+          {
+            echo "### Dry run: $TAG"
+            echo ""
+            echo "Tag: $STATE."
+            echo ""
+            echo "Release notes:"
+            echo ""
+            echo '```'
+            git show "$SHA:CHANGELOG.md" | awk -v v="$VERSION" '
+              /^## / { if (inside) exit; inside = ($2 == v) ; next }
+              inside { print }' | grep . || echo "(no CHANGELOG.md section for $VERSION — a real run would stop)"
+            echo "---"
+            echo "Deployed: — (fill in the date it was uploaded to the Arii MCP catalog)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Tag the commit, unless already tagged
+        if: ${{ !inputs.dry_run }}
         env:
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ steps.version.outputs.sha }}
@@ -72,6 +110,7 @@ jobs:
           git push origin "$TAG"
 
       - name: Publish the release, unless it exists
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
