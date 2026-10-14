@@ -1,0 +1,101 @@
+name: "Release"
+
+run-name: "Release ${{ inputs.ref || 'main' }} · by:${{ github.actor }}"
+
+# Tags the arii.yaml that was uploaded to the Arii MCP catalog, and publishes it as a GitHub Release.
+#
+# The spec is uploaded by hand, and one catalog serves dev, staging and prod, so an upload is live
+# everywhere at once. Until now nothing marked which commit was uploaded, so the spec could not be
+# checked out exactly as it went out. Run this after an upload:
+#
+#   - it reads the version in arii.yaml at `ref` (default: main) and tags that commit v<version>;
+#   - it publishes the GitHub Release v<version>, with that version's CHANGELOG.md section as its
+#     notes and a "Deployed:" line to fill in by hand with the upload date.
+#
+# Idempotent: a tag that already points at the commit is kept, and a release that exists is left as
+# it is. A tag of the same version on another commit stops the run, because a version names one spec.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The commit that was uploaded: a SHA, or main. Its arii.yaml version names the release."
+        required: false
+        type: string
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the commit and its version
+        id: version
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --verify --quiet "${REF:-main}^{commit}" || git rev-parse --verify --quiet "origin/${REF:-main}^{commit}" || true)
+          [ -n "$SHA" ] || { echo "::error::'$REF' is not a commit in this repository."; exit 1; }
+          VERSION=$(git show "$SHA:arii.yaml" | awk '/^info:/{i=1} i && /^  version:/{gsub(/"/,"",$2); print $2; exit}')
+          [ -n "$VERSION" ] || { echo "::error::No info.version in arii.yaml at $SHA."; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing arii.yaml $VERSION from \`${SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag the commit, unless already tagged
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if EXISTING=$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}"); then
+            if [ "$EXISTING" != "$SHA" ]; then
+              echo "::error::$TAG already names ${EXISTING:0:7}, not ${SHA:0:7}. A version names one spec: raise the version, or release the commit $TAG already names."
+              exit 1
+            fi
+            echo "$TAG already names this commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "arii.yaml $TAG, as uploaded to the Arii MCP catalog"
+          git push origin "$TAG"
+
+      - name: Publish the release, unless it exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "The $TAG release already exists; left as it is."
+            exit 0
+          fi
+          # The version's section: from its "## <version>" heading to the next "## ".
+          git show "$SHA:CHANGELOG.md" | awk -v v="$VERSION" '
+            /^## / { if (inside) exit; inside = ($2 == v) ; next }
+            inside { print }' > "$RUNNER_TEMP/section.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/section.md"; then
+            echo "::error::CHANGELOG.md has no section for $VERSION. Add \"## $VERSION — <date>\" with what changed, then run this again."
+            exit 1
+          fi
+          {
+            cat "$RUNNER_TEMP/section.md"
+            echo ""
+            echo "---"
+            echo "Deployed: — (fill in the date it was uploaded to the Arii MCP catalog)"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+          echo "Published $TAG." >> "$GITHUB_STEP_SUMMARY"
