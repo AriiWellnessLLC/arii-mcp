@@ -9,11 +9,14 @@ run-name: "Release ${{ inputs.ref || 'main' }} · ${{ inputs.dry_run && 'dry run
 # checked out exactly as it went out. Run this after an upload:
 #
 #   - it reads the version in arii.yaml at `ref` (default: main) and tags that commit v<version>;
-#   - it publishes the GitHub Release v<version>, with that version's CHANGELOG.md section as its
-#     notes and a "Deployed:" line to fill in by hand with the upload date.
+#   - it publishes the GitHub Release v<version>. Its notes are built from git, not written by hand:
+#     the spec version since the last published release (for example 3.1.0 → 7.1.0) and the title
+#     of every PR merged in between, then a "Deployed:" line to fill in with the upload date.
+#     `since` names the older commit or tag to compare with instead; with no earlier release and
+#     no `since`, the notes list every PR up to the commit.
 #
-# A dry run (the default) reads the version and the changelog section, shows the release notes it
-# would publish, and creates neither tag nor release.
+# A dry run (the default) reads the version, shows the release notes it would publish, and creates
+# neither tag nor release.
 #
 # Idempotent: a tag that already points at the commit is kept, and a release that exists is left as
 # it is. A tag of the same version on another commit stops the run, because a version names one spec.
@@ -31,6 +34,11 @@ on:
         required: false
         type: string
         default: main
+      since:
+        description: "Optional: the older commit or tag the release notes compare with. Empty means the last published release."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -60,6 +68,43 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing arii.yaml $VERSION from \`${SHA:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
 
+      # What changed since the last published release (or `since`): the spec version, and every PR
+      # merged in between, by the "(#N)" a squash merge leaves in its subject.
+      - name: Build the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+          SINCE: ${{ inputs.since }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SINCE" ]; then
+            # The newest published release other than this one.
+            SINCE=$(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' | grep -vx "$TAG" | sort -V | tail -1 || true)
+          fi
+          if [ -n "$SINCE" ] && ! git rev-parse --verify --quiet "$SINCE^{commit}" >/dev/null; then
+            echo "::error::'$SINCE' is not a commit or tag in this repository."
+            exit 1
+          fi
+          {
+            if [ -n "$SINCE" ]; then
+              OLD=$(git show "$SINCE:arii.yaml" 2>/dev/null | awk '/^info:/{i=1} i && /^  version:/{gsub(/"/,"",$2); print $2; exit}')
+              echo "arii.yaml ${OLD:-?} → $VERSION. Changes since $SINCE."
+              RANGE="$SINCE..$SHA"
+            else
+              echo "arii.yaml $VERSION. First release: every change up to it."
+              RANGE="$SHA"
+            fi
+            echo ""
+            echo "### Pull requests"
+            PRS=$(git log --first-parent --format=%s "$RANGE" | grep -E '\(#[0-9]+\)$' | sed 's/^/- /' || true)
+            echo "${PRS:-- None.}"
+            echo ""
+            echo "---"
+            echo "Deployed: — (fill in the date it was uploaded to the Arii MCP catalog)"
+          } > "$RUNNER_TEMP/notes.md"
+
       - name: What a real run would create (dry run)
         if: ${{ inputs.dry_run }}
         env:
@@ -81,11 +126,7 @@ jobs:
             echo "Release notes:"
             echo ""
             echo '```'
-            git show "$SHA:CHANGELOG.md" | awk -v v="$VERSION" '
-              /^## / { if (inside) exit; inside = ($2 == v) ; next }
-              inside { print }' | grep . || echo "(no CHANGELOG.md section for $VERSION — a real run would stop)"
-            echo "---"
-            echo "Deployed: — (fill in the date it was uploaded to the Arii MCP catalog)"
+            cat "$RUNNER_TEMP/notes.md"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -114,27 +155,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-          SHA: ${{ steps.version.outputs.sha }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "The $TAG release already exists; left as it is."
             exit 0
           fi
-          # The version's section: from its "## <version>" heading to the next "## ".
-          git show "$SHA:CHANGELOG.md" | awk -v v="$VERSION" '
-            /^## / { if (inside) exit; inside = ($2 == v) ; next }
-            inside { print }' > "$RUNNER_TEMP/section.md"
-          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/section.md"; then
-            echo "::error::CHANGELOG.md has no section for $VERSION. Add \"## $VERSION — <date>\" with what changed, then run this again."
-            exit 1
-          fi
-          {
-            cat "$RUNNER_TEMP/section.md"
-            echo ""
-            echo "---"
-            echo "Deployed: — (fill in the date it was uploaded to the Arii MCP catalog)"
-          } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
           echo "Published $TAG." >> "$GITHUB_STEP_SUMMARY"
