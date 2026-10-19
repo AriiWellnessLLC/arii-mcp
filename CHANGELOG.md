@@ -6,6 +6,26 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 7.3.0 — unreleased
+
+Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
+
+### Added
+
+- `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
+
+### Changed
+
+- `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None.
+
 ## 3.1.0 — week of Oct 5–11, 2026 (released Oct 8)
 
 Jira: AIP-381.
