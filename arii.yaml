@@ -1122,9 +1122,10 @@ paths:
         individual readings use `get_marker_samples_compact`.
 
         To read one observation, send its `observationId`; dates may then be omitted.
-        Otherwise both `recordStartDate` and `recordEndDate` are required as
-        `yyyy-MM-dd`. Send both dates or neither — a partial pair does not narrow the
-        observation-scoped read. Repeat `markerTypeIds` for each marker GUID to include.
+        Otherwise send at least one of `recordStartDate` or `recordEndDate` as
+        `yyyy-MM-dd`. Either record date can be sent alone; the missing side leaves
+        the range open, even with `observationId`.
+        Repeat `markerTypeIds` for each marker GUID to include.
 
         `observationTypes` uses exact matching against the observation type name. The
         full set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,
@@ -1195,16 +1196,18 @@ paths:
         - name: recordStartDate
           in: query
           description: |
-            Patient local calendar start day (YYYY-MM-DD). Send together with
-            `recordEndDate`; both dates may be omitted when `observationId` is present.
+            Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound.
+            Send this, `recordEndDate`, or both; both dates may be omitted when
+            `observationId` is present.
           schema:
             type: string
             format: date
         - name: recordEndDate
           in: query
           description: |
-            Patient local calendar end day (YYYY-MM-DD). Send together with
-            `recordStartDate`; both dates may be omitted when `observationId` is present.
+            Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no
+            upper bound. Send this, `recordStartDate`, or both; both dates may be omitted
+            when `observationId` is present.
           schema:
             type: string
             format: date
@@ -1254,8 +1257,8 @@ paths:
                 $ref: "#/components/schemas/PagedObservationSamples"
         "400":
           description: |
-            Invalid paging, date range, marker filter, or sample cap; both record dates
-            are required unless observationId is provided
+            Invalid paging, date range, marker filter, or sample cap; at least one
+            record date is required unless observationId is provided
         "403":
           description: Requester is not permitted to read this user's samples
 

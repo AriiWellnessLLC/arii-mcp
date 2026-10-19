@@ -16,7 +16,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
 
 ### Changed
 
-- `get_observation_samples` allows `recordStartDate` and `recordEndDate` to be omitted when `observationId` is supplied. Otherwise both dates are required. A partial date pair does not narrow an observation read. (#10)
+- `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
 
 ### Removed
 

@@ -41,14 +41,14 @@ class ObservationSamplesContractTest(unittest.TestCase):
                 self.assertIn("both dates may be omitted", parameter["description"])
                 self.assertIn("`observationId` is present", parameter["description"])
         self.assertIn(
-            "Otherwise both `recordStartDate` and `recordEndDate` are required",
+            "Otherwise send at least one of `recordStartDate` or `recordEndDate`",
             self.operation["description"],
         )
 
-    def test_partial_date_pair_does_not_claim_to_narrow_an_observation(self):
+    def test_partial_date_pair_leaves_the_other_bound_open(self):
         description = " ".join(self.operation["description"].split())
-        self.assertIn("Send both dates or neither", description)
-        self.assertIn("a partial pair does not narrow the observation-scoped read", description)
+        self.assertIn("Either record date can be sent alone", description)
+        self.assertIn("the missing side leaves the range open, even with `observationId`", description)
 
     def test_paging_keeps_the_agent_page_limit_and_defaults(self):
         self.assertEqual(self.parameters["pageNumber"]["schema"], {
@@ -88,7 +88,8 @@ class ObservationSamplesContractTest(unittest.TestCase):
             "readOnlyHint": True, "idempotentHint": True,
         })
         responses = self.operation["responses"]
-        self.assertIn("required unless observationId is provided", responses["400"]["description"])
+        self.assertIn("at least one record date is required unless observationId is provided",
+                      " ".join(responses["400"]["description"].split()))
         self.assertIn("marker filter", responses["400"]["description"])
         self.assertEqual(responses["403"]["description"],
                          "Requester is not permitted to read this user's samples")
