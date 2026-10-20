@@ -84,3 +84,13 @@ Confirm every declared route still exists on the API before merging. A route tha
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://dev.api.nicoya.health/api/v2/MarkerType
 ```
+
+## Releasing
+
+`arii.yaml` is uploaded to the Arii MCP catalog by hand, and one catalog serves dev, staging and prod.
+After an upload, run the **Release** workflow with the commit that was uploaded (default `main`), with
+dry run unticked (a dry run, the default, shows what it would create and creates nothing). It
+tags that commit `v<info.version>` and publishes a GitHub Release, so the spec can always be checked
+out exactly as it went out. The notes are built from git: the spec version since the last published
+release and every PR merged in between (`since` names the older commit to compare with instead). Fill in the release's
+`Deployed:` line with the upload date. Running it again for the same version changes nothing.
