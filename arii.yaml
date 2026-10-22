@@ -1927,6 +1927,11 @@ paths:
         newest first, the preferred source first on the same day (AIP-350).
 
         **Use this for "latest", "today", "on the 14th" and any individual reading.**
+        - `labsOnly=true` — only lab markers (marker types tagged `labresult`). Without
+          `specificMarkers` it reads every lab marker the person has readings for; with them,
+          only the lab markers among them. "Her labs this quarter, newest and previous" is
+          `labsOnly=true&takePerSource=2` with the quarter's dates: per lab and source, the
+          first reading is the newest result and the second the previous one.
         - `latestPerSource=true` — only the newest reading per marker per source: "what's
           her latest HRV" from every source in one call. No window needed; with a window, it
           is the newest reading inside it.
@@ -1935,7 +1940,8 @@ paths:
           the filter runs first and the newest N matches are kept, which needs a window:
           "her last 5 out-of-range readings this year" is `takePerSource=5&select=OutOfRange`
           with the year's dates.
-        - `select=OutOfRange` — only readings outside the reference range they carry.
+        - `select=OutOfRange` — only out-of-range readings, judged by the range printed on the
+          reading's lab report when it has one, else by the range applied to this patient.
         - `valueAbove=X` / `valueBelow=X` — "days her blood pressure was over 140", in the
           reading's unit.
         - `dataSources` — read only these sources.
@@ -1944,7 +1950,14 @@ paths:
         `recordDate`, `startDate`, `dataSourceName`, `originalSource` (the device inside an
         aggregator such as Apple Health), `isPreferredSource`, `referenceRange` (the range
         printed with the reading — a lab report's own range — in the reading's unit, when it
-        carries one; quote it as the report's range), `rangeStatus` and `outOfRange`.
+        carries one; quote it as the report's range), `rangeStatus` and `outOfRange` (judged
+        against that printed range), and `appliedReferenceRange`, `appliedRangeStatus` and
+        `appliedOutOfRange`: the range the practice applies to this patient for the marker
+        (the patient's own, else their cohort's, else the practice's, else the platform
+        default, already filtered to the patient's sex), and the reading judged against it.
+        Use `appliedReferenceRange` as the practice's range for this patient, with its
+        `source`; quote `referenceRange` only as the report's own range. The applied fields
+        are absent when no range applies.
 
         **Capped at 500 readings, not paged,** shared between the markers so a quiet marker
         is not crowded out by a busy one. Each marker is read up to its newest 1,000 readings
@@ -1953,7 +1966,9 @@ paths:
         read or not returned. Say so, and narrow the window, the markers or the filters to
         read the rest.
 
-        `specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are
+        `specificMarkers` is required, 1–20 ids, unless `labsOnly=true`. With `labsOnly=true`
+        and no `specificMarkers`, every lab marker is read, with no 20-marker limit; the
+        500-reading cap still applies. `recordStartDate` and `recordEndDate` are
         required together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is
         set without `select`, `valueAbove` or `valueBelow`.
 
@@ -1980,14 +1995,19 @@ paths:
             format: date
         - name: specificMarkers
           in: query
-          required: true
-          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Required unless `labsOnly=true`; with it, only the lab markers among them are read. Markers outside your access to this person are returned in `withheldIds`.
           schema:
             type: array
             minItems: 1
             maxItems: 20
             items:
               type: string
+        - name: labsOnly
+          in: query
+          description: Only lab markers (marker types tagged `labresult`). With it, `specificMarkers` is optional; without them, every lab marker the person has readings for is read.
+          schema:
+            type: boolean
+            default: false
         - name: latestPerSource
           in: query
           description: Only the newest reading per marker per source, inside the window when one is given. Not with takePerSource.
@@ -2003,7 +2023,7 @@ paths:
             maximum: 100
         - name: select
           in: query
-          description: "`All` (default) or `OutOfRange`: only readings outside their reference range."
+          description: "`All` (default) or `OutOfRange`: only readings outside the range printed on their lab report, or, when they carry none, outside the range applied to this patient."
           schema:
             type: string
             enum: [All, OutOfRange]
@@ -3420,6 +3440,17 @@ components:
           description: Band from the range the reading carries. Null means not judged.
         outOfRange:
           type: boolean
+        appliedReferenceRange:
+          allOf:
+            - $ref: "#/components/schemas/AppliedReferenceRange"
+          description: The range the practice applies to this patient for the marker. Absent when no range applies.
+        appliedRangeStatus:
+          type: string
+          enum: [L, H, InRange]
+          description: The value judged against `appliedReferenceRange`, L below the normal band, H above it, InRange inside it. Absent when no range applies — never read absence as normal.
+        appliedOutOfRange:
+          type: boolean
+          description: True when the value is outside the applied range's normal band. Absent when no range applies.
 
     MarkerSamplesCompactResult:
       type: object

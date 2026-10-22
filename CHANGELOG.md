@@ -8,15 +8,18 @@ Write the entry in the same PR that raises the version. List the tools added, ch
 
 ## 7.3.0 — unreleased
 
-Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
+Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-369](https://nicoya.atlassian.net/browse/AIP-369).
 
 ### Added
 
 - `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
+- `get_marker_samples_compact` accepts `labsOnly`: only lab markers (marker types tagged `labresult`), every one the person has readings for when `specificMarkers` is left out. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range the practice applies to this patient and the reading judged against it, absent when no range applies. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 
 ### Changed
 
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
+- `get_marker_samples_compact`: `specificMarkers` is no longer required when `labsOnly=true`, and `select=OutOfRange` judges a reading by the range printed on its lab report when it has one, else by the applied range. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 
 ### Removed
 
