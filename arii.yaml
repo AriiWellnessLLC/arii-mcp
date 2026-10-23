@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "7.3.0"
+  version: "8.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1931,7 +1931,12 @@ paths:
           `specificMarkers` it reads every lab marker the person has readings for; with them,
           only the lab markers among them. "Her labs this quarter, newest and previous" is
           `labsOnly=true&takePerSource=2` with the quarter's dates: per lab and source, the
-          first reading is the newest result and the second the previous one.
+          first reading is the newest result and the second the previous one. Ids in
+          `specificMarkers` that are not labs are dropped without a word: they are in neither
+          `unmatchedIds` nor `withheldIds`. Without `specificMarkers` nothing is named, so
+          nothing is in `withheldIds`: `labsWithheld: true` says at least one lab type is
+          outside your access to this person, as on a share. Say those labs are outside your
+          access; never say they are missing.
         - `latestPerSource=true` — only the newest reading per marker per source: "what's
           her latest HRV" from every source in one call. No window needed; with a window, it
           is the newest reading inside it.
@@ -1957,7 +1962,9 @@ paths:
         default, already filtered to the patient's sex), and the reading judged against it.
         Use `appliedReferenceRange` as the practice's range for this patient, with its
         `source`; quote `referenceRange` only as the report's own range. The applied fields
-        are absent when no range applies.
+        are absent when no range applies. A range can come without a status: on a text
+        result, or when the range cannot judge the value. Absent `appliedRangeStatus` never
+        means normal.
 
         **Capped at 500 readings, not paged,** shared between the markers so a quiet marker
         is not crowded out by a busy one. Each marker is read up to its newest 1,000 readings
@@ -1995,7 +2002,7 @@ paths:
             format: date
         - name: specificMarkers
           in: query
-          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Required unless `labsOnly=true`; with it, only the lab markers among them are read. Markers outside your access to this person are returned in `withheldIds`.
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Required unless `labsOnly=true`; with it, only the lab markers among them are read, and the others are dropped without appearing in `unmatchedIds` or `withheldIds`. Markers outside your access to this person are returned in `withheldIds`.
           schema:
             type: array
             minItems: 1
@@ -2004,7 +2011,7 @@ paths:
               type: string
         - name: labsOnly
           in: query
-          description: Only lab markers (marker types tagged `labresult`). With it, `specificMarkers` is optional; without them, every lab marker the person has readings for is read.
+          description: Only lab markers (marker types tagged `labresult`). With it, `specificMarkers` is optional; without them, every lab marker the person has readings for is read. Non-lab ids passed in `specificMarkers` are dropped silently, in neither `unmatchedIds` nor `withheldIds`.
           schema:
             type: boolean
             default: false
@@ -2062,7 +2069,7 @@ paths:
         "401":
           description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
         "403":
-          description: Requester is not permitted to read this user's markers
+          description: Requester is not permitted to read this user's markers, or, with labsOnly=true, may read none of this user's lab types
 
   # ===================
   # MARKER TYPE ENDPOINTS
@@ -3447,10 +3454,10 @@ components:
         appliedRangeStatus:
           type: string
           enum: [L, H, InRange]
-          description: The value judged against `appliedReferenceRange`, L below the normal band, H above it, InRange inside it. Absent when no range applies — never read absence as normal.
+          description: The value judged against `appliedReferenceRange`, L below the normal band, H above it, InRange inside it. Absent when no range applies, and also when a range applies but cannot judge the value, such as a text result — never read absence as normal.
         appliedOutOfRange:
           type: boolean
-          description: True when the value is outside the applied range's normal band. Absent when no range applies.
+          description: True when the value is outside the applied range's normal band. Absent when no range applies or the range cannot judge the value.
 
     MarkerSamplesCompactResult:
       type: object
@@ -3478,6 +3485,13 @@ components:
           items:
             type: string
             format: uuid
+        labsWithheld:
+          type: boolean
+          description: |
+            Only with `labsOnly=true`. True when at least one lab type is outside this
+            caller's access to this person, as on a share; false for the patient and for a
+            provider in the patient's practice. Say some labs are outside your access; never
+            say they are missing.
 
     PagedObservations:
       type: object

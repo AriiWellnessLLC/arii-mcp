@@ -6,15 +6,15 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
-## 7.3.0 — unreleased
+## 8.0.0 — unreleased
 
 Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-369](https://nicoya.atlassian.net/browse/AIP-369).
 
 ### Added
 
 - `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
-- `get_marker_samples_compact` accepts `labsOnly`: only lab markers (marker types tagged `labresult`), every one the person has readings for when `specificMarkers` is left out. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
-- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range the practice applies to this patient and the reading judged against it, absent when no range applies. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact` accepts `labsOnly`: only lab markers (marker types tagged `labresult`), every one the person has readings for when `specificMarkers` is left out. Non-lab ids passed with it are dropped silently, in neither `unmatchedIds` nor `withheldIds`. With it, the response carries `labsWithheld`: true when at least one lab type is outside the caller's access to this person, such as on a share. A caller who may read no lab type gets 403. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range the practice applies to this patient and the reading judged against it, absent when no range applies. The status is also absent when the range cannot judge the value, such as a text result. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 
 ### Changed
 
