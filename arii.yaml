@@ -40,10 +40,11 @@ info:
       levels, not directions: never report a result as low or high from a label.
     - **"How many" is answered from `totalCount`.** A read that returns `totalCount` carries
       the server's count of the records matching the request beside the rows. Quote it.
-      Never count the rows: a long list is easy to miscount, and a paged read such as
-      `list_observations` returns one page of a larger total (AIP-413). `list_observations`
-      counts only when called with `IncludeTotalCount=true`; without it, its `totalCount` only
-      says whether another page exists.
+      Never count the rows: a long list is easy to miscount (AIP-413).
+    - **Two paged reads carry no count: `list_observations` and `get_observation_samples`.**
+      Never use their `totalCount` or `totalPages`. For how many, read every page — the
+      largest `PageSize`, then the next `PageNumber`, until `hasNextPage` is false — and count
+      the rows you received.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -953,11 +954,9 @@ paths:
 
         `PageNumber` is 0-based and `PageSize` is 1-100, default 10.
 
-        **For how many, pass `IncludeTotalCount=true` and quote `totalCount`.** It then counts
-        every observation matching the request, across all pages. Without it, `totalCount` is
-        not a count: it only says whether another page exists. A page holds at most `PageSize`
-        rows, so counting the rows comes out short as soon as there is a second page, and a
-        long page is easy to miscount.
+        **For how many, read every page and count the rows.** Call with `PageSize=100`, then
+        the next `PageNumber`, until `hasNextPage` is false. The response carries no count:
+        never use `totalCount` or `totalPages`.
 
         **Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside
         every matching event. One lab panel came back at 288,000 characters; a ten-panel
@@ -1051,15 +1050,6 @@ paths:
           description: |
             **Leave false.** True repeats every nested sample payload per row and blows
             the model context. Use `get_observation_samples` for values.
-          schema:
-            type: boolean
-            default: false
-        - name: IncludeTotalCount
-          in: query
-          description: |
-            Set to true when the question is "how many". `totalCount` is then the number of
-            observations matching the request. Left false, `totalCount` only says whether
-            another page exists. Leave it false when listing rows: counting costs a query.
           schema:
             type: boolean
             default: false
@@ -1165,7 +1155,8 @@ paths:
         `maxSamplesPerMarker` limits the number of newest samples returned per marker.
 
         `pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with
-        `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
+        `hasNextPage` until it is false. The response carries no count: never use
+        `totalCount` or `totalPages`.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
@@ -3467,13 +3458,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ObservationDto"
-        totalCount:
-          type: integer
         pageNumber:
           type: integer
         pageSize:
-          type: integer
-        totalPages:
           type: integer
         hasNextPage:
           type: boolean
@@ -3710,13 +3697,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ObservationSample"
-        totalCount:
-          type: integer
         pageNumber:
           type: integer
         pageSize:
-          type: integer
-        totalPages:
           type: integer
         hasPreviousPage:
           type: boolean

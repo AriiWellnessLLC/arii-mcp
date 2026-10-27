@@ -17,7 +17,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
 ### Changed
 
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
-- `list_observations` takes `IncludeTotalCount`. Its `totalCount` is the number of matching observations only when that is true; otherwise it only says whether another page exists. The tool description and the counting rule tell agents to set it for "how many" ([NIC-5536](https://nicoya.atlassian.net/browse/NIC-5536)).
+- `list_observations` and `get_observation_samples` carry no count. `totalCount` and `totalPages` are gone from their response schemas, and the descriptions and the counting rule tell agents to read every page until `hasNextPage` is false and count the rows ([NIC-5536](https://nicoya.atlassian.net/browse/NIC-5536)).
 
 ### Removed
 

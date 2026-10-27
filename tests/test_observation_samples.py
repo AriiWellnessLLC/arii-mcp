@@ -67,7 +67,9 @@ class ObservationSamplesContractTest(unittest.TestCase):
             "type": "array", "items": {"$ref": "#/components/schemas/ObservationSample"},
         })
         self.assertEqual(page["hasNextPage"], {"type": "boolean"})
-        self.assertEqual(page["totalCount"], {"type": "integer"})
+        # Paged by hasNextPage only: the server does not count, so no count is offered.
+        self.assertNotIn("totalCount", page)
+        self.assertNotIn("totalPages", page)
         sample = self.schemas["ObservationSample"]["properties"]
         self.assertEqual(sample["observation"]["type"], "object")
         self.assertEqual(sample["appliedReferenceRange"]["allOf"], [
