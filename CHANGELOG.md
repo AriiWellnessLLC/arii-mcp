@@ -8,7 +8,7 @@ Write the entry in the same PR that raises the version. List the tools added, ch
 
 ## 7.3.0 — unreleased
 
-Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
+Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-535](https://nicoya.atlassian.net/browse/AIP-535).
 
 ### Added
 
@@ -17,6 +17,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
 ### Changed
 
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
+- `get_active_medications_and_supplements` and `get_all_medications_and_supplements` say that EHR-synced medications are included, that `sourceSystem` names their origin, and that their `AsNeeded` schedule is a placeholder the agent must not report as "taken as needed". Both also say that a successful empty list means nothing is on record, beside the existing rule that a failed read is never evidence of none. The API now returns these rows (arii-api AIP-535); before, the store held none of them.
 
 ### Removed
 

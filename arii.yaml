@@ -517,8 +517,15 @@ paths:
 
         For whether a dose was taken on an earlier day, use `get_dose_history`.
 
-        If this read fails, say you could not retrieve the data. A failure is never
-        evidence that the person has none.
+        Medications synced from an EHR are included. `sourceSystem` names where a row came
+        from (for example `Elation`, `Healthie` or `Athena`); it is null for items the
+        person or their clinician added. A synced row carries an `AsNeeded` schedule only
+        because the EHR sent no dosing schedule: it is a placeholder, not a PRN order. Never
+        report a synced item as "taken as needed"; report the directions in `notes`.
+
+        A successful empty list means nothing is currently on record. If this read fails,
+        say you could not retrieve the data. A failure is never evidence that the person has
+        none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -560,8 +567,15 @@ paths:
         items alongside current ones, so presenting the rows as a medication list would
         overstate what the person takes.
 
-        If this read fails, say you could not retrieve the data. A failure is never
-        evidence that the person has none.
+        Medications synced from an EHR are included. `sourceSystem` names where a row came
+        from (for example `Elation`, `Healthie` or `Athena`); it is null for items the
+        person or their clinician added. A synced row carries an `AsNeeded` schedule only
+        because the EHR sent no dosing schedule: it is a placeholder, not a PRN order. Never
+        report a synced item as "taken as needed"; report the directions in `notes`.
+
+        A successful empty list means nothing of that type is on record. If this read fails,
+        say you could not retrieve the data. A failure is never evidence that the person has
+        none.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
