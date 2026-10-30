@@ -6,17 +6,30 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
-## 7.3.0 — unreleased
+## 9.0.0 — unreleased
 
-Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
+A breaking release: the `get_marker_samples_compact` response changes shape and `list_observations` requires `UserId` (see Breaking changes).
+
+Why 9.0.0 and not 8.0.0: arii-agents main already pins an 8.0.0 that described a labs-only read arii-api never released. This version replaces it, so it needs a higher number in both copies.
+
+Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://nicoya.atlassian.net/browse/AIP-539).
 
 ### Added
 
 - `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
+- `get_marker_samples_compact_count` counts the readings `get_marker_samples_compact` returns over all its pages, with the same parameters. The count stops at 1,000: past it `count` is 1,000 and `countCapped` is true. New response schema `MarkerSamplesCompactCount`. (AIP-539)
+- `get_marker_samples_compact` pages with a cursor: new `cursor` and `limit` parameters (`limit` is 500 when missing, 0 or negative, and at most 500) and a `nextCursor` in the response, null on the last page. A page can be shorter than `limit` and still have a `nextCursor`. A bad cursor, or one sent with different parameters, is a 400 with a plain-text message. (AIP-539)
+- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range that applies to the patient and the reading judged against it. (AIP-366, AIP-539)
+- `get_user_marker_types_with_data` takes repeated `tags`, matching any of them, trimmed and ignoring case; `tags=labresult` lists the patient's lab markers. Every tag blank is a 400. (AIP-539)
 
 ### Changed
 
+- `get_marker_samples_compact` and `get_user_marker_types_with_data` say how to read many markers: split the ids in list order into groups of up to 20, count each group so none is dropped, send `limit=100` for a read across many markers or sources, and send a cursor only with exactly the same other parameters. Seen on AIP139 on 2026-10-30: full 500-reading pages were reported as not retrievable, and ids were dropped when splitting a list. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
+- `get_marker_samples_compact` no longer stops at 500 readings: every reading is reached by following `nextCursor`. `truncated` stays for one release and is true exactly when `nextCursor` is not null; it is deprecated. (AIP-539)
+- `get_marker_samples_compact` `rangeStatus` is `L`, `H` or `InRange` (null when not judged), read with the bands for the patient's sex, instead of the band's label. Readings are judged in the unit they are stored in, as `get_marker_summary_compact` judges them. (AIP-539)
+- `get_marker_samples_compact` `select=OutOfRange` judges a reading by its printed range when it has one, else by the range that applies to the patient, and counts borderline readings as out of range, so it can return more readings than before. (AIP-366, AIP-539)
+- The general pagination guidance describes the cursor read. (AIP-539)
 
 ### Removed
 
@@ -24,7 +37,8 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239).
 
 ### Breaking changes
 
-- None.
+- `list_observations` requires `UserId`. Without it the API read the caller's own record: a pre-visit brief for a patient showed the clinician's 21 workouts (AIP139, 2026-10-30). A caller reading its own record now sends its own id. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact` response changes shape: it adds `nextCursor`, so one call no longer returns every reading up to 500 — a caller has to follow `nextCursor` until it is null. `truncated` now means only "there is another page" and is deprecated. On each reading, `rangeStatus` changes from the band's label to `L`, `H` or `InRange`. (AIP-539)
 
 ## 3.1.0 — week of Oct 5–11, 2026 (released Oct 8)
 
