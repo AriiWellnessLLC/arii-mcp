@@ -41,14 +41,17 @@ info:
     - **"How many" is answered from `totalCount`.** A read that returns `totalCount` carries
       the server's count of the records matching the request beside the rows. Quote it.
       Never count the rows: a long list is easy to miscount, and a paged read such as
-      `list_observations` returns one page of a larger total (AIP-413).
+      `list_observations` returns one page of a larger total (AIP-413). For individual
+      marker readings, `get_marker_samples_compact_count` gives the number, up to 1,000.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
       `select=Abnormal`, whose rows carry `rangeStatus` and `outOfRange`. Every compact row
       carries `referenceRange`: on `get_marker_summary_compact` the range the row was judged
       against, on `get_marker_averages_compact` the range on that source's newest reading in
-      the window, and on `get_marker_samples_compact` the range printed with the reading.
+      the window, and on `get_marker_samples_compact` the range printed with the reading;
+      there each reading also carries `appliedReferenceRange`, the range that applies to the
+      patient, and its own verdict against it.
     - Lab draw metadata (when was the last panel, observation id): `list_observations`
       with `Type=Lab` and **`IncludeHealthKitSamples=false` only**.
     - Device metrics (steps, HR, sleep): marker tools, scoped to the ids from
@@ -140,10 +143,14 @@ info:
     does not say it happened. Read the dates that come back before describing the period
     you covered.
 
-    **Pagination:** 0-based `pageNumber` and `pageSize`. Page sizes and defaults differ per
-    tool and are stated on each. The three compact marker reads are not paged: they are
-    bounded by their scope, and `get_marker_samples_compact` says `truncated` when it cuts.
-    Some record reads are not paged either; their description says so, and they return every
+    **Pagination:** most paged reads take a 0-based `pageNumber` and `pageSize`. Page sizes
+    and defaults differ per tool and are stated on each. `get_marker_samples_compact` pages
+    with a cursor instead: send its `nextCursor` back as `cursor`, with the same filters,
+    and keep going until `nextCursor` is null. A page can hold fewer readings than `limit`
+    and still have a `nextCursor`, so a short page is not the end. If you stop before
+    `nextCursor` is null, say the answer is partial. `get_marker_summary_compact` and
+    `get_marker_averages_compact` are not paged: they are bounded by their scope. Some
+    record reads are not paged either; their description says so, and they return every
     record in the window with `totalCount`.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
@@ -1927,16 +1934,6 @@ paths:
         newest first, the preferred source first on the same day (AIP-350).
 
         **Use this for "latest", "today", "on the 14th" and any individual reading.**
-        - `labsOnly=true` — only lab markers (marker types tagged `labresult`). Without
-          `specificMarkers` it reads every lab marker the person has readings for; with them,
-          only the lab markers among them. "Her labs this quarter, newest and previous" is
-          `labsOnly=true&takePerSource=2` with the quarter's dates: per lab and source, the
-          first reading is the newest result and the second the previous one. Ids in
-          `specificMarkers` that are not labs are dropped without a word: they are in neither
-          `unmatchedIds` nor `withheldIds`. Without `specificMarkers` nothing is named, so
-          nothing is in `withheldIds`: `labsWithheld: true` says at least one lab type is
-          outside your access to this person, as on a share. Say those labs are outside your
-          access; never say they are missing.
         - `latestPerSource=true` — only the newest reading per marker per source: "what's
           her latest HRV" from every source in one call. No window needed; with a window, it
           is the newest reading inside it.
@@ -1945,8 +1942,9 @@ paths:
           the filter runs first and the newest N matches are kept, which needs a window:
           "her last 5 out-of-range readings this year" is `takePerSource=5&select=OutOfRange`
           with the year's dates.
-        - `select=OutOfRange` — only out-of-range readings, judged by the range printed on the
-          reading's lab report when it has one, else by the range applied to this patient.
+        - `select=OutOfRange` — only readings outside their range: the range printed with
+          the reading when it has one, else the range that applies to the patient, as
+          `get_marker_summary_compact` judges. Borderline readings count as out of range.
         - `valueAbove=X` / `valueBelow=X` — "days her blood pressure was over 140", in the
           reading's unit.
         - `dataSources` — read only these sources.
@@ -1955,27 +1953,23 @@ paths:
         `recordDate`, `startDate`, `dataSourceName`, `originalSource` (the device inside an
         aggregator such as Apple Health), `isPreferredSource`, `referenceRange` (the range
         printed with the reading — a lab report's own range — in the reading's unit, when it
-        carries one; quote it as the report's range), `rangeStatus` and `outOfRange` (judged
-        against that printed range), and `appliedReferenceRange`, `appliedRangeStatus` and
-        `appliedOutOfRange`: the range the practice applies to this patient for the marker
-        (the patient's own, else their cohort's, else the practice's, else the platform
-        default, already filtered to the patient's sex), and the reading judged against it.
-        Use `appliedReferenceRange` as the practice's range for this patient, with its
-        `source`; quote `referenceRange` only as the report's own range. The applied fields
-        are absent when no range applies. A range can come without a status: on a text
-        result, or when the range cannot judge the value. Absent `appliedRangeStatus` never
-        means normal.
+        carries one; quote it as the report's range), `rangeStatus` and `outOfRange` (the
+        reading judged against that printed range, using the bands for the patient's sex),
+        and, when a range applies to the patient, `appliedReferenceRange`,
+        `appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it
+        is stored in, the same way `get_marker_summary_compact` judges it.
 
-        **Capped at 500 readings, not paged,** shared between the markers so a quiet marker
-        is not crowded out by a busy one. Each marker is read up to its newest 1,000 readings
-        per source in the window, and the filters apply to those. `truncated` is true when
-        either limit cut something: the answer may be missing older readings, which were not
-        read or not returned. Say so, and narrow the window, the markers or the filters to
-        read the rest.
+        **Paged with a cursor.** Readings come by marker, then date newest first, then the
+        preferred source first, then source name, then time newest first. `limit` is the page
+        size: 500 when missing, 0 or negative, and never more than 500. When `nextCursor` is
+        not null, call again with the same parameters plus `cursor=<nextCursor>`, and keep
+        going until `nextCursor` is null. A page can hold fewer readings than `limit` — even
+        none — and still have a `nextCursor`: a filtered read stops after looking at 5,000
+        readings and continues on the next page. If you stop before `nextCursor` is null, say
+        the answer is partial. For "how many", call `get_marker_samples_compact_count` with
+        the same filters instead of paging and counting.
 
-        `specificMarkers` is required, 1–20 ids, unless `labsOnly=true`. With `labsOnly=true`
-        and no `specificMarkers`, every lab marker is read, with no 20-marker limit; the
-        500-reading cap still applies. `recordStartDate` and `recordEndDate` are
+        `specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are
         required together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is
         set without `select`, `valueAbove` or `valueBelow`.
 
@@ -2002,19 +1996,14 @@ paths:
             format: date
         - name: specificMarkers
           in: query
-          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Required unless `labsOnly=true`; with it, only the lab markers among them are read, and the others are dropped without appearing in `unmatchedIds` or `withheldIds`. Markers outside your access to this person are returned in `withheldIds`.
+          required: true
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.
           schema:
             type: array
             minItems: 1
             maxItems: 20
             items:
               type: string
-        - name: labsOnly
-          in: query
-          description: Only lab markers (marker types tagged `labresult`). With it, `specificMarkers` is optional; without them, every lab marker the person has readings for is read. Non-lab ids passed in `specificMarkers` are dropped silently, in neither `unmatchedIds` nor `withheldIds`.
-          schema:
-            type: boolean
-            default: false
         - name: latestPerSource
           in: query
           description: Only the newest reading per marker per source, inside the window when one is given. Not with takePerSource.
@@ -2030,7 +2019,7 @@ paths:
             maximum: 100
         - name: select
           in: query
-          description: "`All` (default) or `OutOfRange`: only readings outside the range printed on their lab report, or, when they carry none, outside the range applied to this patient."
+          description: "`All` (default) or `OutOfRange`: only readings outside their reference range."
           schema:
             type: string
             enum: [All, OutOfRange]
@@ -2057,19 +2046,141 @@ paths:
             type: array
             items:
               $ref: "#/components/schemas/HealthDataSourceName"
+        - name: cursor
+          in: query
+          description: |
+            The `nextCursor` of the previous page, unchanged, sent with the same other
+            parameters. Omit it for the first page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500.
+          schema:
+            type: integer
+            default: 500
+            maximum: 500
       responses:
         "200":
-          description: Readings from every source, capped at 500
+          description: One page of readings from every source, and the cursor of the next page
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MarkerSamplesCompactResult"
         "400":
-          description: specificMarkers missing, over 20 or with no valid id; only one of the two dates; the window missing without latestPerSource/takePerSource, or missing when either is combined with select, valueAbove or valueBelow; both latestPerSource and takePerSource set; takePerSource outside 1–100; or dataSources empty or naming an unknown source
+          description: |
+            specificMarkers missing, over 20 or with no valid id; only one of the two dates; the
+            window missing without latestPerSource/takePerSource, or missing when either is
+            combined with select, valueAbove or valueBelow; both latestPerSource and
+            takePerSource set; takePerSource outside 1–100; dataSources empty or naming an
+            unknown source. For a bad cursor the body is the plain text "Invalid cursor. Pass
+            back the nextCursor of the previous page unchanged."; for a cursor sent with
+            different parameters it is "This cursor belongs to a request with different
+            filters. Start again without a cursor." — start again without `cursor`.
         "401":
           description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
         "403":
-          description: Requester is not permitted to read this user's markers, or, with labsOnly=true, may read none of this user's lab types
+          description: Requester is not permitted to read this user's markers
+
+  /api/v2/Marker/samples-compact/{userId}/count:
+    get:
+      tags: [Markers]
+      operationId: get_marker_samples_compact_count
+      summary: Count the individual readings get_marker_samples_compact returns
+      description: |
+        Returns how many readings `get_marker_samples_compact` returns over all its pages,
+        for the same parameters without `cursor` and `limit`. Use it when the question is
+        "how many": "how many glucose readings above 180 this month", "how many days did she
+        log her blood pressure". Never page and count the rows yourself.
+
+        **The count stops at 1,000.** When more than 1,000 readings match, `count` is 1,000
+        and `countCapped` is true: say "more than 1,000", never the exact number.
+
+        The same checks and errors as `get_marker_samples_compact`, and the same
+        `unmatchedIds` and `withheldIds`. A count with `select`, `valueAbove` or `valueBelow`
+        has to judge readings, so it is slower than a plain count.
+
+        If this read fails, say you could not retrieve the count. A failure is never evidence
+        that the person has no readings.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - $ref: "#/components/parameters/AriiUserIdPath"
+        - name: recordStartDate
+          in: query
+          description: Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow.
+          schema:
+            type: string
+            format: date
+        - name: recordEndDate
+          in: query
+          description: End date (YYYY-MM-DD). Passed together with recordStartDate.
+          schema:
+            type: string
+            format: date
+        - name: specificMarkers
+          in: query
+          required: true
+          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 20
+            items:
+              type: string
+        - name: latestPerSource
+          in: query
+          description: Count only the newest reading per marker per source. Not with takePerSource.
+          schema:
+            type: boolean
+            default: false
+        - name: takePerSource
+          in: query
+          description: Count only the newest N readings per marker per source, 1–100. With a filter, the newest N matches. Not with latestPerSource.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: select
+          in: query
+          description: "`All` (default) or `OutOfRange`, as on `get_marker_samples_compact`."
+          schema:
+            type: string
+            enum: [All, OutOfRange]
+            default: All
+        - name: valueAbove
+          in: query
+          description: Count only readings above this value, in the reading's unit.
+          schema:
+            type: number
+        - name: valueBelow
+          in: query
+          description: Count only readings below this value, in the reading's unit.
+          schema:
+            type: number
+        - name: dataSources
+          in: query
+          description: Count only these sources, named as `dataSourceName` on a reading. An unknown name is a 400.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/HealthDataSourceName"
+      responses:
+        "200":
+          description: The number of readings, up to 1,000
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkerSamplesCompactCount"
+        "400":
+          description: The same parameter errors as get_marker_samples_compact
+        "401":
+          description: "No user identity: this read is Bearer only, so an X-API-Key call is refused"
+        "403":
+          description: Requester is not permitted to read this user's markers
 
   # ===================
   # MARKER TYPE ENDPOINTS
@@ -2302,6 +2413,10 @@ paths:
         `get_marker_summary_compact` for current values, `get_marker_averages_compact` for a
         trend or a goal, `get_marker_samples_compact` for individual readings,
         `get_observation_samples` for whether a result is normal for this person.
+
+        **`tags=labresult` lists only the patient's lab markers.** To read every lab a patient
+        has, call this with `tags=labresult`, then read the ids in groups of up to 20 with
+        `get_marker_samples_compact`, following `nextCursor` on each.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -2316,9 +2431,23 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: tags
+          in: query
+          description: |
+            Only marker types carrying any of these tags. Repeat the parameter for more than
+            one (`tags=labresult&tags=vital`). Tags are compared trimmed and ignoring case.
+            `labresult` is the tag of lab markers. A request whose every tag is blank is a 400.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
       responses:
         "200":
           description: Marker types the user has data for
+        "400":
+          description: Every tag sent is blank
         "403":
           description: Requester is not permitted to read this user's data dictionary
 
@@ -3444,20 +3573,30 @@ components:
         rangeStatus:
           type: string
           nullable: true
-          description: Band from the range the reading carries. Null means not judged.
+          enum: [L, H, InRange]
+          description: >-
+            The reading judged against its printed range, using the bands for the patient's
+            sex: L below the normal band, H above it, InRange inside it. Null when the reading
+            carries no range that can judge it — never read null as normal.
         outOfRange:
           type: boolean
+          description: True when the reading is outside its printed range, borderline or further.
         appliedReferenceRange:
           allOf:
             - $ref: "#/components/schemas/AppliedReferenceRange"
-          description: The range the practice applies to this patient for the marker. Absent when no range applies.
+          description: >-
+            The range that applies to this patient (their own, a cohort's, the practice's or
+            the platform's, the most specific winning), in the reading's unit. Absent when no
+            range applies or it cannot be shown in the reading's unit. Not printed on any report.
         appliedRangeStatus:
           type: string
+          nullable: true
           enum: [L, H, InRange]
-          description: The value judged against `appliedReferenceRange`, L below the normal band, H above it, InRange inside it. Absent when no range applies, and also when a range applies but cannot judge the value, such as a text result — never read absence as normal.
+          description: The reading judged against the applied range. Absent when it was not judged.
         appliedOutOfRange:
           type: boolean
-          description: True when the value is outside the applied range's normal band. Absent when no range applies or the range cannot judge the value.
+          nullable: true
+          description: True when the reading is outside the applied range, borderline or further. Absent when it was not judged.
 
     MarkerSamplesCompactResult:
       type: object
@@ -3466,9 +3605,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MarkerSampleCompact"
+        nextCursor:
+          type: string
+          nullable: true
+          description: >-
+            The cursor of the next page; null on the last page. Send it back as `cursor`, with
+            the same parameters, until it is null. A page shorter than `limit` can still have
+            one.
         truncated:
           type: boolean
-          description: True when more readings existed in the window than were read or returned; the answer may be missing older readings. Say so, and narrow the markers or the window.
+          deprecated: true
+          description: >-
+            True exactly when `nextCursor` is not null. Deprecated and will be removed: follow
+            `nextCursor` instead.
         unmatchedIds:
           type: array
           nullable: true
@@ -3485,13 +3634,31 @@ components:
           items:
             type: string
             format: uuid
-        labsWithheld:
+
+    MarkerSamplesCompactCount:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: The number of readings, at most 1,000.
+        countCapped:
           type: boolean
+          description: True when more than 1,000 readings matched; `count` is then 1,000. Say "more than 1,000".
+        unmatchedIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        withheldIds:
+          type: array
+          nullable: true
           description: |
-            Only with `labsOnly=true`. True when at least one lab type is outside this
-            caller's access to this person, as on a share; false for the patient and for a
-            provider in the patient's practice. Say some labs are outside your access; never
-            say they are missing.
+            Entries of `specificMarkers` that are real marker types this caller may not read
+            for this person. Omitted when nothing was withheld. Say those markers are outside
+            your access to this person; never say the data is missing.
+          items:
+            type: string
+            format: uuid
 
     PagedObservations:
       type: object

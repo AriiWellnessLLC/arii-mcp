@@ -8,18 +8,25 @@ Write the entry in the same PR that raises the version. List the tools added, ch
 
 ## 8.0.0 — unreleased
 
-Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-369](https://nicoya.atlassian.net/browse/AIP-369).
+A breaking release: the `get_marker_samples_compact` response changes shape (see Breaking changes).
+
+Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://nicoya.atlassian.net/browse/AIP-539).
 
 ### Added
 
 - `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
-- `get_marker_samples_compact` accepts `labsOnly`: only lab markers (marker types tagged `labresult`), every one the person has readings for when `specificMarkers` is left out. Non-lab ids passed with it are dropped silently, in neither `unmatchedIds` nor `withheldIds`. With it, the response carries `labsWithheld`: true when at least one lab type is outside the caller's access to this person, such as on a share. A caller who may read no lab type gets 403. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
-- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range the practice applies to this patient and the reading judged against it, absent when no range applies. The status is also absent when the range cannot judge the value, such as a text result. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact_count` counts the readings `get_marker_samples_compact` returns over all its pages, with the same parameters. The count stops at 1,000: past it `count` is 1,000 and `countCapped` is true. New response schema `MarkerSamplesCompactCount`. (AIP-539)
+- `get_marker_samples_compact` pages with a cursor: new `cursor` and `limit` parameters (`limit` is 500 when missing, 0 or negative, and at most 500) and a `nextCursor` in the response, null on the last page. A page can be shorter than `limit` and still have a `nextCursor`. A bad cursor, or one sent with different parameters, is a 400 with a plain-text message. (AIP-539)
+- `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range that applies to the patient and the reading judged against it. (AIP-366, AIP-539)
+- `get_user_marker_types_with_data` takes repeated `tags`, matching any of them, trimmed and ignoring case; `tags=labresult` lists the patient's lab markers. Every tag blank is a 400. (AIP-539)
 
 ### Changed
 
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
-- `get_marker_samples_compact`: `specificMarkers` is no longer required when `labsOnly=true`, and `select=OutOfRange` judges a reading by the range printed on its lab report when it has one, else by the applied range. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_marker_samples_compact` no longer stops at 500 readings: every reading is reached by following `nextCursor`. `truncated` stays for one release and is true exactly when `nextCursor` is not null; it is deprecated. (AIP-539)
+- `get_marker_samples_compact` `rangeStatus` is `L`, `H` or `InRange` (null when not judged), read with the bands for the patient's sex, instead of the band's label. Readings are judged in the unit they are stored in, as `get_marker_summary_compact` judges them. (AIP-539)
+- `get_marker_samples_compact` `select=OutOfRange` judges a reading by its printed range when it has one, else by the range that applies to the patient, and counts borderline readings as out of range, so it can return more readings than before. (AIP-366, AIP-539)
+- The general pagination guidance describes the cursor read. (AIP-539)
 
 ### Removed
 
@@ -27,7 +34,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-369](https://
 
 ### Breaking changes
 
-- None.
+- `get_marker_samples_compact` response changes shape: it adds `nextCursor`, so one call no longer returns every reading up to 500 — a caller has to follow `nextCursor` until it is null. `truncated` now means only "there is another page" and is deprecated. On each reading, `rangeStatus` changes from the band's label to `L`, `H` or `InRange`. (AIP-539)
 
 ## 3.1.0 — week of Oct 5–11, 2026 (released Oct 8)
 
