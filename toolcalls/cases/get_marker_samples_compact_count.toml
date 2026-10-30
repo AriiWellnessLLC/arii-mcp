@@ -1,0 +1,38 @@
+# Tool-call cases for get_marker_samples_compact_count. Each case asks the model five wordings of one question, with only
+# the tool list from arii.yaml, and checks the call it makes. All ids and dates are made up.
+
+# "How many" is the count tool, never paging and counting the readings.
+[[case]]
+id = "above-180-this-month"
+never_tools = ["get_marker_samples_compact"]
+questions = [
+  "How many glucose readings above 180 did she have this month?",
+  "This month, how many times was her blood sugar over 180?",
+  "Count her glucose readings higher than 180 so far this month.",
+  "How often has her glucose gone above 180 this month?",
+  "What's the number of blood sugar readings over 180 for her this month?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.expect]]
+tool = "get_marker_samples_compact_count"
+args.userId = { equals = "00000000-0000-4000-a000-000000000001" }
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000002"] }
+args.valueAbove = { equals = 180 }
+args.recordStartDate = { equals = 2026-06-01 }
+args.recordEndDate = { range = { min = 2026-06-17, max = 2026-06-30 } }
+args.cursor = { absent = true }
+args.limit = { absent = true }

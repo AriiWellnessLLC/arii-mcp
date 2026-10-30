@@ -6,9 +6,11 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
-## 8.0.0 — unreleased
+## 9.0.0 — unreleased
 
 A breaking release: the `get_marker_samples_compact` response changes shape (see Breaking changes).
+
+Why 9.0.0 and not 8.0.0: arii-agents main already pins an 8.0.0 that described a labs-only read arii-api never released. This version replaces it, so it needs a higher number in both copies.
 
 Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://nicoya.atlassian.net/browse/AIP-539).
 
@@ -22,6 +24,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://
 
 ### Changed
 
+- `get_marker_samples_compact` `takePerSource` says to use it for "last N" questions, with the out-of-range example, so the model no longer fetches every matching reading when asked for the last few. The description also says the tool has no `pageNumber` or `pageSize`, which the model sometimes sent. Wording only; no parameter changes. (AIP-556)
 - `get_observation_samples` allows both record dates to be omitted when `observationId` is supplied. Otherwise at least one record date is required. Either date can be sent alone and leaves the other bound open, with or without `observationId`. (#10)
 - `get_marker_samples_compact` no longer stops at 500 readings: every reading is reached by following `nextCursor`. `truncated` stays for one release and is true exactly when `nextCursor` is not null; it is deprecated. (AIP-539)
 - `get_marker_samples_compact` `rangeStatus` is `L`, `H` or `InRange` (null when not judged), read with the bands for the patient's sex, instead of the band's label. Readings are judged in the unit they are stored in, as `get_marker_summary_compact` judges them. (AIP-539)

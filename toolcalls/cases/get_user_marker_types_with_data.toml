@@ -1,0 +1,44 @@
+# Tool-call cases for get_user_marker_types_with_data. Each case asks the model five wordings of one question, with only
+# the tool list from arii.yaml, and checks the call it makes. All ids and dates are made up.
+
+# "What labs does she have" lists only the lab markers.
+[[case]]
+id = "labs-only"
+questions = [
+  "What labs does she have?",
+  "Which lab tests are on file for this patient?",
+  "List the lab markers we have for her.",
+  "Can you tell me which lab results exist for her?",
+  "What blood work has she had measured?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.expect]]
+tool = "get_user_marker_types_with_data"
+args.userId = { equals = "00000000-0000-4000-a000-000000000001" }
+args.tags = { equals = ["labresult"] }
+
+# A marker question with no marker id known yet: this tool comes first, and no marker read
+# runs before it answers.
+[[case]]
+id = "first-without-ids"
+never_tools = ["get_marker_summary_compact", "get_marker_averages_compact", "get_marker_samples_compact",
+               "get_marker_samples_compact_count", "get_observation_samples"]
+questions = [
+  "How has her resting heart rate been lately?",
+  "What's her resting heart rate looking like these days?",
+  "Can you check how her resting pulse has been recently?",
+  "Tell me about her recent resting heart rate.",
+  "Has her resting heart rate been okay lately?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.expect]]
+tool = "get_user_marker_types_with_data"
+args.userId = { equals = "00000000-0000-4000-a000-000000000001" }

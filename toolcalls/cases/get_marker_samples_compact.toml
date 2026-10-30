@@ -1,0 +1,246 @@
+# Tool-call cases for get_marker_samples_compact. Each case asks the model five wordings of one question, with only
+# the tool list from arii.yaml, and checks the call it makes. All ids and dates are made up.
+
+# "Latest" is the newest reading per source, with no window.
+[[case]]
+id = "latest"
+questions = [
+  "What's her latest HRV?",
+  "What was her most recent heart rate variability reading?",
+  "Show me her newest HRV value.",
+  "What did her HRV read the last time it was measured?",
+  "Give me the last HRV reading we have for her.",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+args.userId = { equals = "00000000-0000-4000-a000-000000000001" }
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000001"] }
+args.latestPerSource = { equals = true }
+args.takePerSource = { absent = true }
+args.recordStartDate = { absent = true }
+args.recordEndDate = { absent = true }
+
+# "The last 5 out of range this year" filters first, so it needs the year's window.
+[[case]]
+id = "last-5-out-of-range-this-year"
+questions = [
+  "Show me her last 5 out-of-range glucose readings this year.",
+  "What were the five most recent glucose readings this year that fell outside her range?",
+  "List her latest 5 abnormal blood sugar readings from this year.",
+  "Which 5 glucose readings this year were most recently out of range?",
+  "Pull up the last five glucose values this year that were outside the normal range.",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000002"] }
+args.takePerSource = { equals = 5 }
+args.select = { equals = "OutOfRange" }
+args.latestPerSource = { absent = true }
+args.recordStartDate = { equals = 2026-01-01 }
+args.recordEndDate = { range = { min = 2026-06-17, max = 2026-12-31 } }
+
+# Paging: the second call sends the first page's cursor with exactly the same other arguments.
+[[case]]
+id = "follows-the-cursor"
+max_turns = 5
+questions = [
+  "List every glucose reading she had from June 1 to June 7.",
+  "Show me all of her blood sugar readings between June 1st and June 7th.",
+  "I need each individual glucose value she recorded from the 1st to the 7th of June.",
+  "Give me her full set of glucose readings for June 1 through June 7.",
+  "What were all her glucose measurements during the first week of June, June 1 to 7?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.replies]]
+tool = "get_marker_samples_compact"
+when.cursor = { absent = true }
+reply = """
+{"items": [
+  {"markerTypeId": "00000000-0000-4000-b000-000000000002", "value": 104, "unit": "mg/dL", "recordDate": "2026-06-07", "dataSourceName": "Dexcom"},
+  {"markerTypeId": "00000000-0000-4000-b000-000000000002", "value": 98, "unit": "mg/dL", "recordDate": "2026-06-06", "dataSourceName": "Dexcom"}
+], "nextCursor": "c1"}
+"""
+
+[[case.replies]]
+tool = "get_marker_samples_compact"
+when.cursor = { equals = "c1" }
+reply = """
+{"items": [
+  {"markerTypeId": "00000000-0000-4000-b000-000000000002", "value": 112, "unit": "mg/dL", "recordDate": "2026-06-02", "dataSourceName": "Dexcom"}
+], "nextCursor": null}
+"""
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000002"] }
+args.recordStartDate = { equals = 2026-06-01 }
+args.recordEndDate = { equals = 2026-06-07 }
+args.cursor = { absent = true }
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+call = 2
+same_as_call = 1
+args.cursor = { equals = "c1" }
+
+# 25 lab markers: no call names more than 20, and together the calls cover all 25.
+[[case]]
+id = "splits-25-ids"
+max_turns = 5
+questions = [
+  "Give me all of her lab results.",
+  "Show me every lab value she has on file.",
+  "I want to see all her labs, every result.",
+  "Pull up all of her lab test results, please.",
+  "What are all of her lab results?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000100", name = "LDL Cholesterol", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000101", name = "HDL Cholesterol", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000102", name = "Triglycerides", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000103", name = "Total Cholesterol", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000104", name = "HbA1c", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000105", name = "Ferritin", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000106", name = "Vitamin D", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000107", name = "TSH", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000108", name = "Free T4", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000109", name = "Creatinine", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000110", name = "eGFR", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000111", name = "ALT", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000112", name = "AST", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000113", name = "Albumin", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000114", name = "Hemoglobin", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000115", name = "Hematocrit", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000116", name = "Platelets", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000117", name = "White Blood Cells", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000118", name = "Sodium", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000119", name = "Potassium", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000120", name = "Calcium", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000121", name = "Magnesium", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000122", name = "Vitamin B12", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000123", name = "Folate", category = "7", unit = "", aliases = [] },
+  { id = "00000000-0000-4000-b000-000000000124", name = "CRP", category = "7", unit = "", aliases = [] },
+]
+
+[[case.replies]]
+tool = "get_marker_samples_compact"
+reply = '{"items": [], "nextCursor": null}'
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+call = "each"
+args.specificMarkers = { len = { min = 1, max = 20 } }
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+call = "all"
+args.specificMarkers = { contains = [
+  "00000000-0000-4000-b000-000000000100",
+  "00000000-0000-4000-b000-000000000101",
+  "00000000-0000-4000-b000-000000000102",
+  "00000000-0000-4000-b000-000000000103",
+  "00000000-0000-4000-b000-000000000104",
+  "00000000-0000-4000-b000-000000000105",
+  "00000000-0000-4000-b000-000000000106",
+  "00000000-0000-4000-b000-000000000107",
+  "00000000-0000-4000-b000-000000000108",
+  "00000000-0000-4000-b000-000000000109",
+  "00000000-0000-4000-b000-000000000110",
+  "00000000-0000-4000-b000-000000000111",
+  "00000000-0000-4000-b000-000000000112",
+  "00000000-0000-4000-b000-000000000113",
+  "00000000-0000-4000-b000-000000000114",
+  "00000000-0000-4000-b000-000000000115",
+  "00000000-0000-4000-b000-000000000116",
+  "00000000-0000-4000-b000-000000000117",
+  "00000000-0000-4000-b000-000000000118",
+  "00000000-0000-4000-b000-000000000119",
+  "00000000-0000-4000-b000-000000000120",
+  "00000000-0000-4000-b000-000000000121",
+  "00000000-0000-4000-b000-000000000122",
+  "00000000-0000-4000-b000-000000000123",
+  "00000000-0000-4000-b000-000000000124",
+] }
+
+# A source named the way people say it is sent the way the API spells it.
+[[case]]
+id = "apple-health-source"
+questions = [
+  "Show me her step readings from Apple Health for June 1 to June 7.",
+  "What step counts did Apple Health record for her between June 1 and June 7?",
+  "List her Apple Health step readings from the 1st to the 7th of June.",
+  "Give me the individual step entries from her Apple Health for June 1 through 7.",
+  "Pull her step readings, Apple Health only, for June 1 to June 7.",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.expect]]
+tool = "get_marker_samples_compact"
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000003"] }
+args.dataSources = { equals = ["AppleHealth"] }
+args.recordStartDate = { equals = 2026-06-01 }
+args.recordEndDate = { equals = 2026-06-07 }

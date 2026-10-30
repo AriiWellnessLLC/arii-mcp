@@ -1,0 +1,35 @@
+# Tool-call cases for get_marker_averages_compact. Each case asks the model five wordings of one question, with only
+# the tool list from arii.yaml, and checks the call it makes. All ids and dates are made up.
+
+# A trend question is the averages read, not individual readings.
+[[case]]
+id = "trend"
+never_tools = ["get_marker_samples_compact"]
+questions = [
+  "Is her sleep trending up or down over the last 30 days?",
+  "How has her sleep duration changed over the past month?",
+  "Over the last 30 days, is she sleeping more or less?",
+  "What's the trend in her sleep for the past 30 days?",
+  "Has her nightly sleep been going up or down this past month?",
+]
+
+[case.context]
+patient_id = "00000000-0000-4000-a000-000000000001"
+today = 2026-06-17
+
+[[case.replies]]
+tool = "get_user_marker_types_with_data"
+reply = [
+  { id = "00000000-0000-4000-b000-000000000001", name = "Heart Rate Variability", category = "2", unit = "ms", aliases = ["HRV"] },
+  { id = "00000000-0000-4000-b000-000000000002", name = "Glucose", category = "5", unit = "mg/dL", aliases = ["Blood Glucose", "Blood Sugar"] },
+  { id = "00000000-0000-4000-b000-000000000003", name = "Steps", category = "1", unit = "count", aliases = ["Step Count"] },
+  { id = "00000000-0000-4000-b000-000000000004", name = "Sleep Duration", category = "28", unit = "min", aliases = ["Total Sleep"] },
+  { id = "00000000-0000-4000-b000-000000000005", name = "Resting Heart Rate", category = "2", unit = "bpm", aliases = ["RHR"] },
+]
+
+[[case.expect]]
+tool = "get_marker_averages_compact"
+args.userId = { equals = "00000000-0000-4000-a000-000000000001" }
+args.specificMarkers = { equals = ["00000000-0000-4000-b000-000000000004"] }
+args.recordStartDate = { range = { min = 2026-05-16, max = 2026-05-19 } }
+args.recordEndDate = { range = { min = 2026-06-16, max = 2026-06-17 } }

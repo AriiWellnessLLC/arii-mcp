@@ -1,0 +1,3039 @@
+{
+ "about": "The tools the Airia MCP gateway built from arii.yaml, read back from an MCP deployment's cached tools (GET /v1/McpDeployments/{id}, cachedTools), beside the operation each was built from, taken from a Redocly bundle of the same commit. Read-only; nothing was uploaded.",
+ "specCommit": "f6762bff27c92c4df8f7131bd41105eda9747730",
+ "specVersion": "8.0.0",
+ "readOn": "2026-10-30",
+ "toolPrefix": "Arii_MCP",
+ "tools": [
+  {
+   "operation": {
+    "operationId": "bulk_search_marker_types",
+    "description": "Resolves marker names to marker type IDs.\n\nUse when you have a marker name and need its ID before calling another marker tool.\n\nSupports up to 200 keywords. Matching is case-insensitive substring matching against\nnames, aliases, and lab component names. It is not fuzzy matching and does not apply\nsynonyms.\n\nUse the clinical marker name rather than the user's wording when possible: `my sugar`\nmatches nothing where `glucose` and `hba1c` do; `bp` returns IGFBP-3, so send\n`blood pressure`. A device is not a marker — \"my rings\" is an Oura ring, whose\nmarkers are Readiness Score and Sleep Score. Send every candidate form in the one\ncall; keywords cost nothing and a marker you fail to find costs the answer.\n\nIf the same marker name exists for different specimens, the results distinguish them\nby type — `Ferritin` is both Serum and Blood, `Glucose` both Blood and Urine. Pick\nthe specimen the question implies.\n\nResults are keyed by the keyword you sent. An empty array for a keyword means the\ncatalog has no such marker — it does not mean the patient has no data for it. Do not\nreport absence from this tool.\n",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "keywords": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "Search keywords (up to 200). Send every form the question needs in one call."
+         },
+         "tenantId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Optional tenant/group ID (GUID) to filter by."
+         },
+         "includeDefault": {
+          "type": "boolean",
+          "description": "Whether to include default (null tenant) marker types."
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "tool": {
+    "name": "arii_mcp_bulk_search_marker_types",
+    "description": "Resolves marker names to marker type IDs.\n\nUse when you have a marker name and need its ID before calling another marker tool.\n\nSupports up to 200 keywords. Matching is case-insensitive substring matching against\nnames, aliases, and lab component names. It is not fuzzy matching and does not apply\nsynonyms.\n\nUse the clinical marker name rather than the user's wording when possible: `my sugar`\nmatches nothing where `glucose` and `hba1c` do; `bp` returns IGFBP-3, so send\n`blood pressure`. A device is not a marker — \"my rings\" is an Oura ring, whose\nmarkers are Readiness Score and Sleep Score. Send every candidate form in the one\ncall; keywords cost nothing and a marker you fail to find costs the answer.\n\nIf the same marker name exists for different specimens, the results distinguish them\nby type — `Ferritin` is both Serum and Blood, `Glucose` both Blood and Urine. Pick\nthe specimen the question implies.\n\nResults are keyed by the keyword you sent. An empty array for a keyword means the\ncatalog has no such marker — it does not mean the patient has no data for it. Do not\nreport absence from this tool.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "keywords": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Search keywords (up to 200). Send every form the question needs in one call."
+      },
+      "tenantId": {
+       "type": "string",
+       "description": "Optional tenant/group ID (GUID) to filter by."
+      },
+      "includeDefault": {
+       "type": "boolean",
+       "description": "Whether to include default (null tenant) marker types."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_active_medications_and_supplements",
+    "description": "Returns what a person is currently taking — medications and supplements together\n— one row per item, including display name, form, strength, dose quantity,\nschedule, instructions, and today's dose logs.\n\nUse for the current medication or supplement list.\n\n`type` is optional. Omit it for both categories, or pass `Medication` or\n`Supplement` for one. Omitting it does not default to medications.\n\nReturns only items active today. An item that is on hold, completed or stopped,\nor whose schedule has not started or has already ended, is not returned.\n\nStrength is `strengthValue` with `strengthUnitCode`, a free-text unit code that\ncan carry a concentration such as `mg/mL`. Always report the two together.\n\n`todayHistory` holds today's dose logs for the item. An empty `todayHistory` does\nnot mean nothing was scheduled: a day's logs exist only once the prescription was\ncreated or updated, so today's rows may not have been created yet.\n\nFor whether a dose was taken on an earlier day, use `get_dose_history`.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "description": "Optional product type. Omit for both categories; pass `Medication` or\n`Supplement` for one. Omitting does not default to medications.\n",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Medication",
+        "Supplement"
+       ]
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_active_medications_and_supplements",
+    "description": "Returns what a person is currently taking — medications and supplements together\n— one row per item, including display name, form, strength, dose quantity,\nschedule, instructions, and today's dose logs.\n\nUse for the current medication or supplement list.\n\n`type` is optional. Omit it for both categories, or pass `Medication` or\n`Supplement` for one. Omitting it does not default to medications.\n\nReturns only items active today. An item that is on hold, completed or stopped,\nor whose schedule has not started or has already ended, is not returned.\n\nStrength is `strengthValue` with `strengthUnitCode`, a free-text unit code that\ncan carry a concentration such as `mg/mL`. Always report the two together.\n\n`todayHistory` holds today's dose logs for the item. An empty `todayHistory` does\nnot mean nothing was scheduled: a day's logs exist only once the prescription was\ncreated or updated, so today's rows may not have been created yet.\n\nFor whether a dose was taken on an earlier day, use `get_dose_history`.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "type": {
+       "enum": [
+        "Medication",
+        "Supplement"
+       ],
+       "type": "string",
+       "description": "Optional product type. Omit for both categories; pass `Medication` or\n`Supplement` for one. Omitting does not default to medications.\n"
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_adherence_stats",
+    "description": "Returns counts of a person's doses by outcome — `total`, `taken`, `skipped`,\n`missed` and `pending` — plus `adherenceRate` as a percentage.\n\nUse when the question is how well someone is keeping to their doses, rather than\nreading every dose through `get_dose_history` and counting them.\n\n`type` is optional. Omit it for one figure covering medications and supplements\ncombined, or pass `Medication` or `Supplement` for a single category.\n\n`startDate` and `endDate` are both optional and neither is defaulted. The window\napplies to the day each dose was scheduled for. Send both whenever the question is\nabout a period (\"this month\", \"since starting X\"); send neither only when the\nquestion is about the person's whole history, because that is what you get back.\n\nOmitting `endDate` leaves the window open-ended, so doses that are not yet due are\ncounted as well. Those land in `pending`.\n\n`adherenceRate` is `taken` divided by `total` minus `pending`. It is reported as 0\nwhen nothing in the window has resolved yet, so check `total` and `pending` before\ndescribing a rate of 0 as poor adherence.\n\nA skipped dose counts against the rate exactly as a missed one does, even though\nthe person chose to skip it.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "description": "Optional product type. Omit for one combined figure across both categories.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Medication",
+        "Supplement"
+       ]
+      }
+     },
+     {
+      "name": "startDate",
+      "in": "query",
+      "description": "Window start. Optional. Send it with `endDate` to scope the counts to a period; with neither date the counts cover the whole history.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "endDate",
+      "in": "query",
+      "description": "Window end. Optional and not defaulted — omitting it leaves the window open-ended and counts doses that are not yet due as `pending`.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_adherence_stats",
+    "description": "Returns counts of a person's doses by outcome — `total`, `taken`, `skipped`,\n`missed` and `pending` — plus `adherenceRate` as a percentage.\n\nUse when the question is how well someone is keeping to their doses, rather than\nreading every dose through `get_dose_history` and counting them.\n\n`type` is optional. Omit it for one figure covering medications and supplements\ncombined, or pass `Medication` or `Supplement` for a single category.\n\n`startDate` and `endDate` are both optional and neither is defaulted. The window\napplies to the day each dose was scheduled for. Send both whenever the question is\nabout a period (\"this month\", \"since starting X\"); send neither only when the\nquestion is about the person's whole history, because that is what you get back.\n\nOmitting `endDate` leaves the window open-ended, so doses that are not yet due are\ncounted as well. Those land in `pending`.\n\n`adherenceRate` is `taken` divided by `total` minus `pending`. It is reported as 0\nwhen nothing in the window has resolved yet, so check `total` and `pending` before\ndescribing a rate of 0 as poor adherence.\n\nA skipped dose counts against the rate exactly as a missed one does, even though\nthe person chose to skip it.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "type": {
+       "enum": [
+        "Medication",
+        "Supplement"
+       ],
+       "type": "string",
+       "description": "Optional product type. Omit for one combined figure across both categories."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "endDate": {
+       "type": "string",
+       "description": "Window end. Optional and not defaulted — omitting it leaves the window open-ended and counts doses that are not yet due as `pending`."
+      },
+      "startDate": {
+       "type": "string",
+       "description": "Window start. Optional. Send it with `endDate` to scope the counts to a period; with neither date the counts cover the whole history."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_all_medications_and_supplements",
+    "description": "Returns every medication or supplement on a person's record, current and past,\nwhatever its status — `Active`, `OnHold`, `Completed`, `Stopped`, `Superseded`\nor `EnteredInError` — with `deactivatedAt` for anything no longer in use.\n\nUse for what someone used to take, when they stopped, or whether they have been\non a drug before. For what they are taking now, use\n`get_active_medications_and_supplements`.\n\n`type` must always be sent. It accepts `Medication` or `Supplement`, and omitting\nit returns medications only, with a 200 and nothing saying supplements were left\nout. Call the tool twice when both categories are needed.\n\nRead `status` on every row. This tool returns discontinued and mistakenly entered\nitems alongside current ones, so presenting the rows as a medication list would\noverstate what the person takes.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "required": true,
+      "description": "Product type. Always send it: an absent value binds to `Medication` and\nsilently drops supplements with a 200. Call twice for both categories.\n",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Medication",
+        "Supplement"
+       ]
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_all_medications_and_supplements",
+    "description": "Returns every medication or supplement on a person's record, current and past,\nwhatever its status — `Active`, `OnHold`, `Completed`, `Stopped`, `Superseded`\nor `EnteredInError` — with `deactivatedAt` for anything no longer in use.\n\nUse for what someone used to take, when they stopped, or whether they have been\non a drug before. For what they are taking now, use\n`get_active_medications_and_supplements`.\n\n`type` must always be sent. It accepts `Medication` or `Supplement`, and omitting\nit returns medications only, with a 200 and nothing saying supplements were left\nout. Call the tool twice when both categories are needed.\n\nRead `status` on every row. This tool returns discontinued and mistakenly entered\nitems alongside current ones, so presenting the rows as a medication list would\noverstate what the person takes.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "type",
+      "userId"
+     ],
+     "properties": {
+      "type": {
+       "enum": [
+        "Medication",
+        "Supplement"
+       ],
+       "type": "string",
+       "description": "Product type. Always send it: an absent value binds to `Medication` and\nsilently drops supplements with a 200. Call twice for both categories.\n"
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_current_user",
+    "description": "Returns the person making the request: their Arii user ID, profile ID, email,\nname, and active group.\n\nUse when the question is about the requester themselves or when you need to\ndetermine whether the current session has a linked Arii account. It is not a step\nbefore reading a patient's data: no tool here needs `requestingUserId`.\n\nDo not use the returned ID as the `userId` for a patient data read. For a\nclinician, this would read the clinician's own record instead of the patient.\n\nA 404 means the session has no linked Arii account.\n"
+   },
+   "tool": {
+    "name": "arii_mcp_get_current_user",
+    "description": "Returns the person making the request: their Arii user ID, profile ID, email,\nname, and active group.\n\nUse when the question is about the requester themselves or when you need to\ndetermine whether the current session has a linked Arii account. It is not a step\nbefore reading a patient's data: no tool here needs `requestingUserId`.\n\nDo not use the returned ID as the `userId` for a patient data read. For a\nclinician, this would read the clinician's own record instead of the patient.\n\nA 404 means the session has no linked Arii account.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {}
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_dose_history",
+    "description": "Returns the individual scheduled doses of a person's medications and supplements,\ngrouped by the day each dose was scheduled for, with its status: `Pending`,\n`Taken`, `Skipped`, or `Missed`.\n\nUse for medication or supplement adherence, and to determine whether a dose was\ntaken.\n\nThis is not the current medication list. Use\n`get_active_medications_and_supplements` for that.\n\n`type` is optional. Omit it for both categories, or pass `Medication` or\n`Supplement` for one.\n\n`endDate` defaults to today in the person's own timezone.\n\nUse a `pageSize` of 50 normally. A page holds at most that many doses, newest\nscheduled dose first. `pageNumber` is 0-based. When `hasNextPage` is `true`, more\ndoses exist in the window; ask for the next page only if the question needs\nolder doses. For counts and adherence rates, use `get_adherence_stats` instead\nof paging through every dose.\n\n`dateFilterBy` defaults to `ScheduledDate`, which keeps each dose in the day it\nwas due. Pass `EffectiveDate` to window taken doses by when they were actually\ntaken instead.\n\n`yyyy-MM-dd` works on both axes, and the end day is covered in full. A UTC instant\nsuch as `2026-08-28T00:00:00Z` is also accepted and is used exactly as sent.\n\n`Pending` means a dose is still due and `Missed` means it is past its grace\nperiod. The endpoint reconciles the two before answering, so both can be reported\nas read.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "description": "Optional product type. Omit for both categories.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Medication",
+        "Supplement"
+       ]
+      }
+     },
+     {
+      "name": "startDate",
+      "in": "query",
+      "required": true,
+      "description": "Window start. A plain `2026-08-28`, or a UTC instant with a trailing `Z`.\n",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "endDate",
+      "in": "query",
+      "description": "Window end, as `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Defaults to today in the person's own timezone.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "description": "Optional adherence status filter.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Pending",
+        "Taken",
+        "Skipped",
+        "Missed"
+       ]
+      }
+     },
+     {
+      "name": "dateFilterBy",
+      "in": "query",
+      "description": "Which date the window applies to. `ScheduledDate` (default) keeps each dose in\nthe day it was due; `EffectiveDate` windows taken doses by when they were\nactually taken.\n",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "ScheduledDate",
+        "EffectiveDate"
+       ],
+       "default": "ScheduledDate"
+      }
+     },
+     {
+      "name": "pageSize",
+      "in": "query",
+      "required": true,
+      "description": "Doses per page, 1-100. Send 50 unless the question needs fewer.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100
+      }
+     },
+     {
+      "name": "pageNumber",
+      "in": "query",
+      "description": "Page number (0-based, default 0). Sent only with `pageSize`.",
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_dose_history",
+    "description": "Returns the individual scheduled doses of a person's medications and supplements,\ngrouped by the day each dose was scheduled for, with its status: `Pending`,\n`Taken`, `Skipped`, or `Missed`.\n\nUse for medication or supplement adherence, and to determine whether a dose was\ntaken.\n\nThis is not the current medication list. Use\n`get_active_medications_and_supplements` for that.\n\n`type` is optional. Omit it for both categories, or pass `Medication` or\n`Supplement` for one.\n\n`endDate` defaults to today in the person's own timezone.\n\nUse a `pageSize` of 50 normally. A page holds at most that many doses, newest\nscheduled dose first. `pageNumber` is 0-based. When `hasNextPage` is `true`, more\ndoses exist in the window; ask for the next page only if the question needs\nolder doses. For counts and adherence rates, use `get_adherence_stats` instead\nof paging through every dose.\n\n`dateFilterBy` defaults to `ScheduledDate`, which keeps each dose in the day it\nwas due. Pass `EffectiveDate` to window taken doses by when they were actually\ntaken instead.\n\n`yyyy-MM-dd` works on both axes, and the end day is covered in full. A UTC instant\nsuch as `2026-08-28T00:00:00Z` is also accepted and is used exactly as sent.\n\n`Pending` means a dose is still due and `Missed` means it is past its grace\nperiod. The endpoint reconciles the two before answering, so both can be reported\nas read.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "pageSize",
+      "startDate",
+      "userId"
+     ],
+     "properties": {
+      "type": {
+       "enum": [
+        "Medication",
+        "Supplement"
+       ],
+       "type": "string",
+       "description": "Optional product type. Omit for both categories."
+      },
+      "status": {
+       "enum": [
+        "Pending",
+        "Taken",
+        "Skipped",
+        "Missed"
+       ],
+       "type": "string",
+       "description": "Optional adherence status filter."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "endDate": {
+       "type": "string",
+       "description": "Window end, as `2026-08-28` — the whole day is covered — or a UTC instant with a trailing `Z`. Defaults to today in the person's own timezone."
+      },
+      "pageSize": {
+       "type": "number",
+       "description": "Doses per page, 1-100. Send 50 unless the question needs fewer."
+      },
+      "startDate": {
+       "type": "string",
+       "description": "Window start. A plain `2026-08-28`, or a UTC instant with a trailing `Z`.\n"
+      },
+      "pageNumber": {
+       "type": "number",
+       "default": 0,
+       "description": "Page number (0-based, default 0). Sent only with `pageSize`."
+      },
+      "dateFilterBy": {
+       "enum": [
+        "ScheduledDate",
+        "EffectiveDate"
+       ],
+       "type": "string",
+       "default": "ScheduledDate",
+       "description": "Which date the window applies to. `ScheduledDate` (default) keeps each dose in\nthe day it was due; `EffectiveDate` windows taken doses by when they were\nactually taken.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_journal",
+    "description": "Returns one journal entry in full, including its body text.\n\nUse only with a journal ID returned by `get_user_journals`.\n\nUse when the user asks about a specific journal entry already identified.\n",
+    "parameters": [
+     {
+      "name": "journalId",
+      "in": "path",
+      "required": true,
+      "description": "The journal entry ID (GUID), from `get_user_journals`. Never assembled.",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_journal",
+    "description": "Returns one journal entry in full, including its body text.\n\nUse only with a journal ID returned by `get_user_journals`.\n\nUse when the user asks about a specific journal entry already identified.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "journalId"
+     ],
+     "properties": {
+      "journalId": {
+       "type": "string",
+       "description": "The journal entry ID (GUID), from `get_user_journals`. Never assembled."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_averages_compact",
+    "description": "Returns a trend for each named marker, one row per marker **and source**, the\nperson's preferred source first (AIP-350).\n\n**Use this for any trend or \"compared to usual\" question.** It returns the averages\nwith the arithmetic already done: `direction` (`Up`, `Down` or `Flat`, from a\nstraight-line fit over every daily value, `Flat` when the change is smaller than the\nmarker's own trend threshold) and `change` (in the marker's unit). Report those; do\nnot work the trend out yourself.\n\nEach row has `markerTypeId`, `displayName`, `unit`, `dataSourceName`,\n`isPreferredSource`, `dailyAverage`, `weekdayAverage`, `weekendAverage`,\n`highestSingleDay`, `lowestRange`, `highestRange`, `readingDays` (days with a value),\n`firstRecordDate`, `lastRecordDate`, `direction`, `change`, `goalType`, `goalMinValue`, `goalMaxValue`,\n`daysMeetingGoal`, `daysMissingGoal`, `baselineAverage`, `displayPrecision` and\n`referenceRange` — the range on that source's newest reading in the window that\ncarries one, absent when none does. Every number is already rounded to\n`displayPrecision`.\n\n`lastRecordDate` earlier than the window's end means that source stopped sending:\nsay so. A source with no value in the window has no row.\n\n**Options:**\n- `groupBy=Week` or `groupBy=Month` — adds `periods`, one average per calendar week\n  (Monday to Sunday) or month, each with its `readingDays`. A period's `periodStart`\n  and `periodEnd` are its first and last days with a value, not the week's or month's\n  bounds. Use it for \"month by month\" and for any window longer than a few weeks.\n- `baselineDays=N` — adds `baselineAverage` over the N days before\n  `recordStartDate`, from the same source. \"Compared to usual\" in one call: a 30-day\n  window with `baselineDays=90` compares the month with the 90 days before it.\n- Goals: compare `dailyAverage` with the inclusive `goalMinValue` and `goalMaxValue`.\n  A missing side is open. `goalType` is Range, SpecificValue (equal bounds),\n  MinimumThreshold (minimum only), or MaximumThreshold (maximum only).\n  A value is inside when it satisfies every supplied bound; otherwise it is below\n  the minimum or above the maximum. Describe a Range goal as a range, never one target.\n  For example, 450 minutes is inside a 420–540-minute sleep goal (7–9 hours).\n  `daysMeetingGoal` and `daysMissingGoal` count days for floors, ceilings and ranges.\n  Both are null for a SpecificValue target, which has no better side.\n  Goal metadata is null when no goal or unit conversion applies; do not grade that row.\n- `select=Changing` — only rows whose `direction` is `Up` or `Down`.\n- `includeChart=true` — adds `chartData`, one `{recordDate, value}` per day with a\n  value. **Off by default. Turn it on only to draw a chart.**\n- `dataSources` — read only these sources.\n\n`specificMarkers` is required, 1–20 ids, from `get_user_marker_types_with_data`.\n`recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. No value is\ncarried forward from before the window. Not paged.\n\nOn a share-based read the start date may be narrowed to the share's own window, so\nthe range covered can be shorter than the one you asked for, with nothing on the\nresponse saying so. The baseline stops at the share's start too, so `baselineAverage`\ncan cover fewer than `baselineDays` days. Read the returned dates rather than assuming\nyour range held.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "required": true,
+      "description": "Start date as a local calendar date (YYYY-MM-DD).",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "required": true,
+      "description": "End date as a local calendar date (YYYY-MM-DD).",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "specificMarkers",
+      "in": "query",
+      "required": true,
+      "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Unusable entries are\nskipped and returned in `unmatchedIds`; markers outside your access to this person\nare returned in `withheldIds`.\n",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 20,
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "select",
+      "in": "query",
+      "description": "`All` (default) or `Changing`: only rows whose direction is Up or Down.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "All",
+        "Changing"
+       ],
+       "default": "All"
+      }
+     },
+     {
+      "name": "groupBy",
+      "in": "query",
+      "description": "`None` (default), `Week` or `Month`: adds one average per calendar week or month.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "None",
+        "Week",
+        "Month"
+       ],
+       "default": "None"
+      }
+     },
+     {
+      "name": "baselineDays",
+      "in": "query",
+      "description": "Adds `baselineAverage` over this many days before recordStartDate. 1–365.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 365
+      }
+     },
+     {
+      "name": "includeChart",
+      "in": "query",
+      "description": "Adds the daily points. Off by default; turn it on only to draw a chart.",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     },
+     {
+      "name": "dataSources",
+      "in": "query",
+      "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n",
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_averages_compact",
+    "description": "Returns a trend for each named marker, one row per marker **and source**, the\nperson's preferred source first (AIP-350).\n\n**Use this for any trend or \"compared to usual\" question.** It returns the averages\nwith the arithmetic already done: `direction` (`Up`, `Down` or `Flat`, from a\nstraight-line fit over every daily value, `Flat` when the change is smaller than the\nmarker's own trend threshold) and `change` (in the marker's unit). Report those; do\nnot work the trend out yourself.\n\nEach row has `markerTypeId`, `displayName`, `unit`, `dataSourceName`,\n`isPreferredSource`, `dailyAverage`, `weekdayAverage`, `weekendAverage`,\n`highestSingleDay`, `lowestRange`, `highestRange`, `readingDays` (days with a value),\n`firstRecordDate`, `lastRecordDate`, `direction`, `change`, `goalType`, `goalMinValue`, `goalMaxValue`,\n`daysMeetingGoal`, `daysMissingGoal`, `baselineAverage`, `displayPrecision` and\n`referenceRange` — the range on that source's newest reading in the window that\ncarries one, absent when none does. Every number is already rounded to\n`displayPrecision`.\n\n`lastRecordDate` earlier than the window's end means that source stopped sending:\nsay so. A source with no value in the window has no row.\n\n**Options:**\n- `groupBy=Week` or `groupBy=Month` — adds `periods`, one average per calendar week\n  (Monday to Sunday) or month, each with its `readingDays`. A period's `periodStart`\n  and `periodEnd` are its first and last days with a value, not the week's or month's\n  bounds. Use it for \"month by month\" and for any window longer than a few weeks.\n- `baselineDays=N` — adds `baselineAverage` over the N days before\n  `recordStartDate`, from the same source. \"Compared to usual\" in one call: a 30-day\n  window with `baselineDays=90` compares the month with the 90 days before it.\n- Goals: compare `dailyAverage` with the inclusive `goalMinValue` and `goalMaxValue`.\n  A missing side is open. `goalType` is Range, SpecificValue (equal bounds),\n  MinimumThreshold (minimum only), or MaximumThreshold (maximum only).\n  A value is inside when it satisfies every supplied bound; otherwise it is below\n  the minimum or above the maximum. Describe a Range goal as a range, never one target.\n  For example, 450 minutes is inside a 420–540-minute sleep goal (7–9 hours).\n  `daysMeetingGoal` and `daysMissingGoal` count days for floors, ceilings and ranges.\n  Both are null for a SpecificValue target, which has no better side.\n  Goal metadata is null when no goal or unit conversion applies; do not grade that row.\n- `select=Changing` — only rows whose `direction` is `Up` or `Down`.\n- `includeChart=true` — adds `chartData`, one `{recordDate, value}` per day with a\n  value. **Off by default. Turn it on only to draw a chart.**\n- `dataSources` — read only these sources.\n\n`specificMarkers` is required, 1–20 ids, from `get_user_marker_types_with_data`.\n`recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`. No value is\ncarried forward from before the window. Not paged.\n\nOn a share-based read the start date may be narrowed to the share's own window, so\nthe range covered can be shorter than the one you asked for, with nothing on the\nresponse saying so. The baseline stops at the share's start too, so `baselineAverage`\ncan cover fewer than `baselineDays` days. Read the returned dates rather than assuming\nyour range held.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "recordEndDate",
+      "recordStartDate",
+      "specificMarkers",
+      "userId"
+     ],
+     "properties": {
+      "select": {
+       "enum": [
+        "All",
+        "Changing"
+       ],
+       "type": "string",
+       "default": "All",
+       "description": "`All` (default) or `Changing`: only rows whose direction is Up or Down."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "groupBy": {
+       "enum": [
+        "None",
+        "Week",
+        "Month"
+       ],
+       "type": "string",
+       "default": "None",
+       "description": "`None` (default), `Week` or `Month`: adds one average per calendar week or month."
+      },
+      "dataSources": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ],
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n"
+       },
+       "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n"
+      },
+      "baselineDays": {
+       "type": "number",
+       "description": "Adds `baselineAverage` over this many days before recordStartDate. 1–365."
+      },
+      "includeChart": {
+       "type": "boolean",
+       "default": false,
+       "description": "Adds the daily points. Off by default; turn it on only to draw a chart."
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "End date as a local calendar date (YYYY-MM-DD)."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Start date as a local calendar date (YYYY-MM-DD)."
+      },
+      "specificMarkers": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Unusable entries are\nskipped and returned in `unmatchedIds`; markers outside your access to this person\nare returned in `withheldIds`.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_data_sources",
+    "description": "Returns, for each marker type you ask about, the sources this person has readings\nfrom — a device such as `\"Oura\"` or `\"AppleHealth\"`, a lab, a manual entry — as names,\nsorted. It covers the person's whole history, not a window: a source listed here has\nreadings for the marker at some time, not necessarily in the period asked about.\n\n**When to call it.** Rarely. The compact marker reads return every source's values,\nso they already say which sources a marker has in the window. Call this when the\nquestion is about the sources themselves — \"which devices track my sleep?\" — or to\nknow which sources hold a marker at any time, not only in the window you read.\n\n**Always pass `scope=ExistingData`.** It lists the sources that hold readings. Without\nit the default also lists connected devices that could supply a marker but have sent\nnothing, which would send the person looking for data that does not exist.\n\nAn empty list means no readings from any source.\n\nPass each id as its own `markerTypeIds` entry, copied from\n`get_user_marker_types_with_data`. Every id you send comes back, with an empty list\nwhen no source applies. An empty `markerTypeIds` returns 400; omitting it returns\nevery marker the person has, which is rarely what the question needs.\n\nAccess is resolved from who is asking, exactly as for\n`get_user_marker_types_with_data`; no header is involved. A 403 is an access problem\nand never an absence.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "markerTypeIds",
+      "in": "query",
+      "description": "Marker type IDs to report on — the `id` of a `get_user_marker_types_with_data`\nrow. Repeat the parameter for each one.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       }
+      }
+     },
+     {
+      "name": "scope",
+      "in": "query",
+      "description": "Which sources to list. Always send `ExistingData`: sources the person has\nreadings from. `ConnectedIntegrations` is connected devices whether or not they\nsent anything, and `All` (the default) is both.\n",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "ExistingData",
+        "ConnectedIntegrations",
+        "All"
+       ],
+       "default": "All"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_data_sources",
+    "description": "Returns, for each marker type you ask about, the sources this person has readings\nfrom — a device such as `\"Oura\"` or `\"AppleHealth\"`, a lab, a manual entry — as names,\nsorted. It covers the person's whole history, not a window: a source listed here has\nreadings for the marker at some time, not necessarily in the period asked about.\n\n**When to call it.** Rarely. The compact marker reads return every source's values,\nso they already say which sources a marker has in the window. Call this when the\nquestion is about the sources themselves — \"which devices track my sleep?\" — or to\nknow which sources hold a marker at any time, not only in the window you read.\n\n**Always pass `scope=ExistingData`.** It lists the sources that hold readings. Without\nit the default also lists connected devices that could supply a marker but have sent\nnothing, which would send the person looking for data that does not exist.\n\nAn empty list means no readings from any source.\n\nPass each id as its own `markerTypeIds` entry, copied from\n`get_user_marker_types_with_data`. Every id you send comes back, with an empty list\nwhen no source applies. An empty `markerTypeIds` returns 400; omitting it returns\nevery marker the person has, which is rarely what the question needs.\n\nAccess is resolved from who is asking, exactly as for\n`get_user_marker_types_with_data`; no header is involved. A 403 is an access problem\nand never an absence.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "scope": {
+       "enum": [
+        "ExistingData",
+        "ConnectedIntegrations",
+        "All"
+       ],
+       "type": "string",
+       "default": "All",
+       "description": "Which sources to list. Always send `ExistingData`: sources the person has\nreadings from. `ConnectedIntegrations` is connected devices whether or not they\nsent anything, and `All` (the default) is both.\n"
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "markerTypeIds": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "description": "Marker type IDs to report on — the `id` of a `get_user_marker_types_with_data`\nrow. Repeat the parameter for each one.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_samples_compact",
+    "description": "Returns individual readings for the named markers from **every source**, by marker,\nnewest first, the preferred source first on the same day (AIP-350).\n\n**Use this for \"latest\", \"today\", \"on the 14th\" and any individual reading.**\n- `latestPerSource=true` — only the newest reading per marker per source: \"what's\n  her latest HRV\" from every source in one call. No window needed; with a window, it\n  is the newest reading inside it.\n- `takePerSource=N` — the newest N per marker per source, 1–100. No window needed;\n  with a window, the newest N inside it. With `select`, `valueAbove` or `valueBelow`\n  the filter runs first and the newest N matches are kept, which needs a window:\n  \"her last 5 out-of-range readings this year\" is `takePerSource=5&select=OutOfRange`\n  with the year's dates.\n- `select=OutOfRange` — only readings outside their range: the range printed with\n  the reading when it has one, else the range that applies to the patient, as\n  `get_marker_summary_compact` judges. Borderline readings count as out of range.\n- `valueAbove=X` / `valueBelow=X` — \"days her blood pressure was over 140\", in the\n  reading's unit.\n- `dataSources` — read only these sources.\n\nEach reading has `markerTypeId`, `value`, `secondValue`, `textValue`, `unit`,\n`recordDate`, `startDate`, `dataSourceName`, `originalSource` (the device inside an\naggregator such as Apple Health), `isPreferredSource`, `referenceRange` (the range\nprinted with the reading — a lab report's own range — in the reading's unit, when it\ncarries one; quote it as the report's range), `rangeStatus` and `outOfRange` (the\nreading judged against that printed range, using the bands for the patient's sex),\nand, when a range applies to the patient, `appliedReferenceRange`,\n`appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it\nis stored in, the same way `get_marker_summary_compact` judges it.\n\n**Paged with a cursor.** Readings come by marker, then date newest first, then the\npreferred source first, then source name, then time newest first. `limit` is the page\nsize: 500 when missing, 0 or negative, and never more than 500. When `nextCursor` is\nnot null, call again with the same parameters plus `cursor=<nextCursor>`, and keep\ngoing until `nextCursor` is null. A page can hold fewer readings than `limit` — even\nnone — and still have a `nextCursor`: a filtered read stops after looking at 5,000\nreadings and continues on the next page. If you stop before `nextCursor` is null, say\nthe answer is partial. For \"how many\", call `get_marker_samples_compact_count` with\nthe same filters instead of paging and counting.\n\n`specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are\nrequired together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is\nset without `select`, `valueAbove` or `valueBelow`.\n\nOn a share-based read the start date may be narrowed to the share's own window.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "End date (YYYY-MM-DD). Passed together with recordStartDate.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "specificMarkers",
+      "in": "query",
+      "required": true,
+      "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 20,
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "latestPerSource",
+      "in": "query",
+      "description": "Only the newest reading per marker per source, inside the window when one is given. Not with takePerSource.",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     },
+     {
+      "name": "takePerSource",
+      "in": "query",
+      "description": "Only the newest N readings per marker per source, 1–100, inside the window when one is given. With a filter, the newest N matches. Not with latestPerSource.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100
+      }
+     },
+     {
+      "name": "select",
+      "in": "query",
+      "description": "`All` (default) or `OutOfRange`: only readings outside their reference range.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "All",
+        "OutOfRange"
+       ],
+       "default": "All"
+      }
+     },
+     {
+      "name": "valueAbove",
+      "in": "query",
+      "description": "Only readings above this value, in the reading's unit.",
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "valueBelow",
+      "in": "query",
+      "description": "Only readings below this value, in the reading's unit.",
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "dataSources",
+      "in": "query",
+      "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n",
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ]
+       }
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "description": "The `nextCursor` of the previous page, unchanged, sent with the same other\nparameters. Omit it for the first page.\n",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "description": "Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500.",
+      "schema": {
+       "type": "integer",
+       "default": 500,
+       "maximum": 500
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_samples_compact",
+    "description": "Returns individual readings for the named markers from **every source**, by marker,\nnewest first, the preferred source first on the same day (AIP-350).\n\n**Use this for \"latest\", \"today\", \"on the 14th\" and any individual reading.**\n- `latestPerSource=true` — only the newest reading per marker per source: \"what's\n  her latest HRV\" from every source in one call. No window needed; with a window, it\n  is the newest reading inside it.\n- `takePerSource=N` — the newest N per marker per source, 1–100. No window needed;\n  with a window, the newest N inside it. With `select`, `valueAbove` or `valueBelow`\n  the filter runs first and the newest N matches are kept, which needs a window:\n  \"her last 5 out-of-range readings this year\" is `takePerSource=5&select=OutOfRange`\n  with the year's dates.\n- `select=OutOfRange` — only readings outside their range: the range printed with\n  the reading when it has one, else the range that applies to the patient, as\n  `get_marker_summary_compact` judges. Borderline readings count as out of range.\n- `valueAbove=X` / `valueBelow=X` — \"days her blood pressure was over 140\", in the\n  reading's unit.\n- `dataSources` — read only these sources.\n\nEach reading has `markerTypeId`, `value`, `secondValue`, `textValue`, `unit`,\n`recordDate`, `startDate`, `dataSourceName`, `originalSource` (the device inside an\naggregator such as Apple Health), `isPreferredSource`, `referenceRange` (the range\nprinted with the reading — a lab report's own range — in the reading's unit, when it\ncarries one; quote it as the report's range), `rangeStatus` and `outOfRange` (the\nreading judged against that printed range, using the bands for the patient's sex),\nand, when a range applies to the patient, `appliedReferenceRange`,\n`appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it\nis stored in, the same way `get_marker_summary_compact` judges it.\n\n**Paged with a cursor.** Readings come by marker, then date newest first, then the\npreferred source first, then source name, then time newest first. `limit` is the page\nsize: 500 when missing, 0 or negative, and never more than 500. When `nextCursor` is\nnot null, call again with the same parameters plus `cursor=<nextCursor>`, and keep\ngoing until `nextCursor` is null. A page can hold fewer readings than `limit` — even\nnone — and still have a `nextCursor`: a filtered read stops after looking at 5,000\nreadings and continues on the next page. If you stop before `nextCursor` is null, say\nthe answer is partial. For \"how many\", call `get_marker_samples_compact_count` with\nthe same filters instead of paging and counting.\n\n`specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are\nrequired together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is\nset without `select`, `valueAbove` or `valueBelow`.\n\nOn a share-based read the start date may be narrowed to the share's own window.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "specificMarkers",
+      "userId"
+     ],
+     "properties": {
+      "limit": {
+       "type": "number",
+       "default": 500,
+       "description": "Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500."
+      },
+      "cursor": {
+       "type": "string",
+       "description": "The `nextCursor` of the previous page, unchanged, sent with the same other\nparameters. Omit it for the first page.\n"
+      },
+      "select": {
+       "enum": [
+        "All",
+        "OutOfRange"
+       ],
+       "type": "string",
+       "default": "All",
+       "description": "`All` (default) or `OutOfRange`: only readings outside their reference range."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "valueAbove": {
+       "type": "number",
+       "description": "Only readings above this value, in the reading's unit."
+      },
+      "valueBelow": {
+       "type": "number",
+       "description": "Only readings below this value, in the reading's unit."
+      },
+      "dataSources": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ],
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n"
+       },
+       "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "End date (YYYY-MM-DD). Passed together with recordStartDate."
+      },
+      "takePerSource": {
+       "type": "number",
+       "description": "Only the newest N readings per marker per source, 1–100, inside the window when one is given. With a filter, the newest N matches. Not with latestPerSource."
+      },
+      "latestPerSource": {
+       "type": "boolean",
+       "default": false,
+       "description": "Only the newest reading per marker per source, inside the window when one is given. Not with takePerSource."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow."
+      },
+      "specificMarkers": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_samples_compact_count",
+    "description": "Returns how many readings `get_marker_samples_compact` returns over all its pages,\nfor the same parameters without `cursor` and `limit`. Use it when the question is\n\"how many\": \"how many glucose readings above 180 this month\", \"how many days did she\nlog her blood pressure\". Never page and count the rows yourself.\n\n**The count stops at 1,000.** When more than 1,000 readings match, `count` is 1,000\nand `countCapped` is true: say \"more than 1,000\", never the exact number.\n\nThe same checks and errors as `get_marker_samples_compact`, and the same\n`unmatchedIds` and `withheldIds`. A count with `select`, `valueAbove` or `valueBelow`\nhas to judge readings, so it is slower than a plain count.\n\nIf this read fails, say you could not retrieve the count. A failure is never evidence\nthat the person has no readings.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "End date (YYYY-MM-DD). Passed together with recordStartDate.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "specificMarkers",
+      "in": "query",
+      "required": true,
+      "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.",
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 20,
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "latestPerSource",
+      "in": "query",
+      "description": "Count only the newest reading per marker per source. Not with takePerSource.",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     },
+     {
+      "name": "takePerSource",
+      "in": "query",
+      "description": "Count only the newest N readings per marker per source, 1–100. With a filter, the newest N matches. Not with latestPerSource.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100
+      }
+     },
+     {
+      "name": "select",
+      "in": "query",
+      "description": "`All` (default) or `OutOfRange`, as on `get_marker_samples_compact`.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "All",
+        "OutOfRange"
+       ],
+       "default": "All"
+      }
+     },
+     {
+      "name": "valueAbove",
+      "in": "query",
+      "description": "Count only readings above this value, in the reading's unit.",
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "valueBelow",
+      "in": "query",
+      "description": "Count only readings below this value, in the reading's unit.",
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "dataSources",
+      "in": "query",
+      "description": "Count only these sources, named as `dataSourceName` on a reading. An unknown name is a 400.",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n",
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_samples_compact_count",
+    "description": "Returns how many readings `get_marker_samples_compact` returns over all its pages,\nfor the same parameters without `cursor` and `limit`. Use it when the question is\n\"how many\": \"how many glucose readings above 180 this month\", \"how many days did she\nlog her blood pressure\". Never page and count the rows yourself.\n\n**The count stops at 1,000.** When more than 1,000 readings match, `count` is 1,000\nand `countCapped` is true: say \"more than 1,000\", never the exact number.\n\nThe same checks and errors as `get_marker_samples_compact`, and the same\n`unmatchedIds` and `withheldIds`. A count with `select`, `valueAbove` or `valueBelow`\nhas to judge readings, so it is slower than a plain count.\n\nIf this read fails, say you could not retrieve the count. A failure is never evidence\nthat the person has no readings.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "specificMarkers",
+      "userId"
+     ],
+     "properties": {
+      "select": {
+       "enum": [
+        "All",
+        "OutOfRange"
+       ],
+       "type": "string",
+       "default": "All",
+       "description": "`All` (default) or `OutOfRange`, as on `get_marker_samples_compact`."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "valueAbove": {
+       "type": "number",
+       "description": "Count only readings above this value, in the reading's unit."
+      },
+      "valueBelow": {
+       "type": "number",
+       "description": "Count only readings below this value, in the reading's unit."
+      },
+      "dataSources": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ],
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n"
+       },
+       "description": "Count only these sources, named as `dataSourceName` on a reading. An unknown name is a 400."
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "End date (YYYY-MM-DD). Passed together with recordStartDate."
+      },
+      "takePerSource": {
+       "type": "number",
+       "description": "Count only the newest N readings per marker per source, 1–100. With a filter, the newest N matches. Not with latestPerSource."
+      },
+      "latestPerSource": {
+       "type": "boolean",
+       "default": false,
+       "description": "Count only the newest reading per marker per source. Not with takePerSource."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Start date (YYYY-MM-DD). Required with recordEndDate, unless latestPerSource or takePerSource is set without select, valueAbove or valueBelow."
+      },
+      "specificMarkers": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_summary_compact",
+    "description": "Returns a person's current marker values, one row per marker **and source**, on a\nrow trimmed to fourteen fields, together with the category counts for the window.\n\n**Every source.** The app shows one source per marker. This read returns every\nsource that has a value in the window — Apple Health, Oura, Mira, the person's own\nentries — each on its own row, the person's preferred source first. So a marker the\npreferred source has nothing for still comes back, from the source that has it. Cite\neach row by its own `dataSourceName` (AIP-350).\n\n**This is the default read for an open question about how someone is doing.** For\ngoals, use `get_marker_averages_compact`, whose rows carry them.\n\nEach row has `markerTypeId`, `displayName`, `value`, `unit`, `recordDate`,\n`categoryName`, `dataSourceName`, `isPreferredSource`, `aggregationMethod`, and —\nwhere a reference range applies — `rangeStatus`, `outOfRange` and `referenceRange`,\nthe range the value was judged against, in the row's `unit`. A row that was not\njudged has no `referenceRange`. `secondValue` and `textValue` carry blood-pressure\nstyle pairs and non-numeric results.\n\n`value` is the window's value by `aggregationMethod`: with `Average` or `Sum` it is\nthe average or total over the whole window, dated by the newest reading behind it.\nOnly `Latest` is a single reading. No value is carried forward from before the\nwindow: for \"when was X last measured\", use `select=Stale`.\n\n`rangeStatus` is the side of the normal band the row's value is on: `L` below, `H`\nabove, `InRange` inside, null when no range could judge it (null never means normal).\nThe range is the lab report's own when the reading carries one, else the range\nresolved for this patient — the same judgement `get_out_of_range_results` makes. For\nthe range's source and the draw date, call `get_out_of_range_results`.\n\n**Not paged.** Every matching row comes back. Scope the call: pass `specificMarkers`\n(up to 100), `categoryId`, or a `select` other than `All`. An unscoped `select=All`\nis refused with 400.\n\n**Filters, all worked out on the server:**\n- `select=Abnormal` — values outside their own reference range. Each source is\n  judged on its own, so an out-of-range Oura value shows even when the preferred\n  source's value is in range. Prefer it for \"how am I doing\": it answers over the\n  whole chart in a handful of rows.\n- `select=NotInPreferred` — markers the preferred source has nothing for in the\n  window while another source does. The preferred source is always checked, even when\n  `dataSources` leaves it out; its rows are not returned then.\n- `select=Stale` with `staleDays=N` — markers whose newest reading, in any source, is\n  more than N days before `recordEndDate`. Each row is that source's newest reading,\n  dated, with `aggregationMethod` `Latest`. `categoryId` is refused with it, its\n  rows carry no `categoryName`, and the response's `categoryFacets` is empty and\n  `unclassifiedCount` is 0.\n- `select=SourcesDisagree` — markers where two sources' values from the same day\n  differ by more than the marker's own trend threshold. Values from different days are\n  a change over time and are not compared. A marker with no trend threshold is never\n  flagged.\n- `dataSources` — read only these sources.\n- `categoryId` — one category, taken from `categoryFacets`.\n\nRows come back grouped by marker, the most recently recorded marker first, and within\na marker the preferred source first. `markerCount` is the number of markers; rows\noutnumber it when a marker has more than one source.\n\n`categoryFacets` counts markers per category across the window, before `categoryId`\nis applied. This is the one place a category filter works on a name you can read.\n`unclassifiedCount` is how many markers no source's value could be judged for — read\nit before treating a short abnormal list as \"everything else was checked\".\n\n`recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`.\n\n`requestingUserId` is deprecated and ignored: the caller is always the session's own\nidentity. This read is Bearer only; under `X-API-Key` it returns 401.\n\n`specificMarkers` entries that are unparseable or resolve to no marker type are\nskipped and returned in `unmatchedIds` (AIP-236); the call is rejected only when no\nentry parses at all. Entries that are real markers outside your access to this person\nare returned in `withheldIds`; without `specificMarkers`, `accessRestricted: true` says\nthe read covered only what you may see.\n\nOn a share-based read the start date may be narrowed to the share's own window, so\nthe range covered can be shorter than the one you asked for, with nothing on the\nresponse saying so. Read the returned dates rather than assuming your range held.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "required": true,
+      "description": "Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "required": true,
+      "description": "End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "specificMarkers",
+      "in": "query",
+      "description": "Up to 100 marker type IDs — the `markerTypeId` field of a row, not its `id`.\nBound as strings rather than GUIDs on purpose: unparseable or unknown entries are\nskipped and returned in `unmatchedIds` instead of failing the call. Markers\noutside your access to this person are returned in `withheldIds`.\n",
+      "schema": {
+       "type": "array",
+       "maxItems": 100,
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "categoryId",
+      "in": "query",
+      "description": "Restrict rows to one category, using a `categoryId` taken from `categoryFacets`.\nThis is a numeric id, not a category name. Not accepted with `select=Stale`.\n",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "select",
+      "in": "query",
+      "description": "`All` (default), `Abnormal`, `NotInPreferred`, `Stale` (needs `staleDays`) or\n`SourcesDisagree`. See the description for what each keeps.\n",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "All",
+        "Abnormal",
+        "NotInPreferred",
+        "Stale",
+        "SourcesDisagree"
+       ],
+       "default": "All"
+      }
+     },
+     {
+      "name": "staleDays",
+      "in": "query",
+      "description": "With `select=Stale` only, and required there. 1–3650.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 3650
+      }
+     },
+     {
+      "name": "dataSources",
+      "in": "query",
+      "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n",
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_summary_compact",
+    "description": "Returns a person's current marker values, one row per marker **and source**, on a\nrow trimmed to fourteen fields, together with the category counts for the window.\n\n**Every source.** The app shows one source per marker. This read returns every\nsource that has a value in the window — Apple Health, Oura, Mira, the person's own\nentries — each on its own row, the person's preferred source first. So a marker the\npreferred source has nothing for still comes back, from the source that has it. Cite\neach row by its own `dataSourceName` (AIP-350).\n\n**This is the default read for an open question about how someone is doing.** For\ngoals, use `get_marker_averages_compact`, whose rows carry them.\n\nEach row has `markerTypeId`, `displayName`, `value`, `unit`, `recordDate`,\n`categoryName`, `dataSourceName`, `isPreferredSource`, `aggregationMethod`, and —\nwhere a reference range applies — `rangeStatus`, `outOfRange` and `referenceRange`,\nthe range the value was judged against, in the row's `unit`. A row that was not\njudged has no `referenceRange`. `secondValue` and `textValue` carry blood-pressure\nstyle pairs and non-numeric results.\n\n`value` is the window's value by `aggregationMethod`: with `Average` or `Sum` it is\nthe average or total over the whole window, dated by the newest reading behind it.\nOnly `Latest` is a single reading. No value is carried forward from before the\nwindow: for \"when was X last measured\", use `select=Stale`.\n\n`rangeStatus` is the side of the normal band the row's value is on: `L` below, `H`\nabove, `InRange` inside, null when no range could judge it (null never means normal).\nThe range is the lab report's own when the reading carries one, else the range\nresolved for this patient — the same judgement `get_out_of_range_results` makes. For\nthe range's source and the draw date, call `get_out_of_range_results`.\n\n**Not paged.** Every matching row comes back. Scope the call: pass `specificMarkers`\n(up to 100), `categoryId`, or a `select` other than `All`. An unscoped `select=All`\nis refused with 400.\n\n**Filters, all worked out on the server:**\n- `select=Abnormal` — values outside their own reference range. Each source is\n  judged on its own, so an out-of-range Oura value shows even when the preferred\n  source's value is in range. Prefer it for \"how am I doing\": it answers over the\n  whole chart in a handful of rows.\n- `select=NotInPreferred` — markers the preferred source has nothing for in the\n  window while another source does. The preferred source is always checked, even when\n  `dataSources` leaves it out; its rows are not returned then.\n- `select=Stale` with `staleDays=N` — markers whose newest reading, in any source, is\n  more than N days before `recordEndDate`. Each row is that source's newest reading,\n  dated, with `aggregationMethod` `Latest`. `categoryId` is refused with it, its\n  rows carry no `categoryName`, and the response's `categoryFacets` is empty and\n  `unclassifiedCount` is 0.\n- `select=SourcesDisagree` — markers where two sources' values from the same day\n  differ by more than the marker's own trend threshold. Values from different days are\n  a change over time and are not compared. A marker with no trend threshold is never\n  flagged.\n- `dataSources` — read only these sources.\n- `categoryId` — one category, taken from `categoryFacets`.\n\nRows come back grouped by marker, the most recently recorded marker first, and within\na marker the preferred source first. `markerCount` is the number of markers; rows\noutnumber it when a marker has more than one source.\n\n`categoryFacets` counts markers per category across the window, before `categoryId`\nis applied. This is the one place a category filter works on a name you can read.\n`unclassifiedCount` is how many markers no source's value could be judged for — read\nit before treating a short abnormal list as \"everything else was checked\".\n\n`recordStartDate` and `recordEndDate` are both required as `yyyy-MM-dd`.\n\n`requestingUserId` is deprecated and ignored: the caller is always the session's own\nidentity. This read is Bearer only; under `X-API-Key` it returns 401.\n\n`specificMarkers` entries that are unparseable or resolve to no marker type are\nskipped and returned in `unmatchedIds` (AIP-236); the call is rejected only when no\nentry parses at all. Entries that are real markers outside your access to this person\nare returned in `withheldIds`; without `specificMarkers`, `accessRestricted: true` says\nthe read covered only what you may see.\n\nOn a share-based read the start date may be narrowed to the share's own window, so\nthe range covered can be shorter than the one you asked for, with nothing on the\nresponse saying so. Read the returned dates rather than assuming your range held.\n\nIf this read fails, say you could not retrieve the data. A failure is never evidence\nthat the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "recordEndDate",
+      "recordStartDate",
+      "userId"
+     ],
+     "properties": {
+      "select": {
+       "enum": [
+        "All",
+        "Abnormal",
+        "NotInPreferred",
+        "Stale",
+        "SourcesDisagree"
+       ],
+       "type": "string",
+       "default": "All",
+       "description": "`All` (default), `Abnormal`, `NotInPreferred`, `Stale` (needs `staleDays`) or\n`SourcesDisagree`. See the description for what each keeps.\n"
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "staleDays": {
+       "type": "number",
+       "description": "With `select=Stale` only, and required there. 1–3650."
+      },
+      "categoryId": {
+       "type": "number",
+       "description": "Restrict rows to one category, using a `categoryId` taken from `categoryFacets`.\nThis is a numeric id, not a category name. Not accepted with `select=Stale`.\n"
+      },
+      "dataSources": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "Arii",
+         "Fitbit",
+         "Oura",
+         "Withings",
+         "AppleHealth",
+         "Garmin",
+         "Whoop",
+         "BioStrap",
+         "Strava",
+         "HealthConnect",
+         "Elation",
+         "FreeStyleLibre",
+         "Cronometer",
+         "Mira",
+         "Dexcom",
+         "Polar",
+         "Omron",
+         "HeartMath",
+         "InBody",
+         "Cerbo",
+         "AdvancedMd",
+         "OneUpHealth",
+         "JunctionLabReport",
+         "Kardia",
+         "Peloton",
+         "Healthie",
+         "Athena",
+         "HeadsUpV1",
+         "HumanApi",
+         "Ultrahuman",
+         "SamsungHealth",
+         "Viome",
+         "Zwift",
+         "Beurer"
+        ],
+        "type": "string",
+        "description": "A source's name, exactly as `dataSourceName` spells it on a compact marker row.\nMatches the API's `HealthDataSource` enum; a name outside this list is a 400.\n"
+       },
+       "description": "Read only these sources, e.g. `Oura`. Omitted reads every source. The names match\n`dataSourceName` on a row exactly — `AppleHealth`, not \"Apple Health\". An unknown\nname is a 400.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "End date as a local calendar date (YYYY-MM-DD). Required with recordStartDate."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Start date as a local calendar date (YYYY-MM-DD). Required with recordEndDate."
+      },
+      "specificMarkers": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Up to 100 marker type IDs — the `markerTypeId` field of a row, not its `id`.\nBound as strings rather than GUIDs on purpose: unparseable or unknown entries are\nskipped and returned in `unmatchedIds` instead of failing the call. Markers\noutside your access to this person are returned in `withheldIds`.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_marker_type",
+    "description": "Returns one marker definition by ID, including name, aliases, SI and conventional\nunits, the conversion factor between them, LOINC and SNOMED codes, display\nprecision, category, and system reference ranges.\n\nUse when you already have a marker type ID and need its definition, unit, or display\nprecision.\n\nDoes not return patient values.\n\nFor searching by name, use `list_marker_types` or `bulk_search_marker_types`.\n\n`systemReferenceRanges` are platform-level ranges, not patient-specific ranges.\n",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "The marker type ID (GUID).",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_marker_type",
+    "description": "Returns one marker definition by ID, including name, aliases, SI and conventional\nunits, the conversion factor between them, LOINC and SNOMED codes, display\nprecision, category, and system reference ranges.\n\nUse when you already have a marker type ID and need its definition, unit, or display\nprecision.\n\nDoes not return patient values.\n\nFor searching by name, use `list_marker_types` or `bulk_search_marker_types`.\n\n`systemReferenceRanges` are platform-level ranges, not patient-specific ranges.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "id"
+     ],
+     "properties": {
+      "id": {
+       "type": "string",
+       "description": "The marker type ID (GUID)."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_meal",
+    "description": "Returns one meal in full, including its complete nutrition breakdown in\n`healthKitSamples`. Read each entry's `quantityTypeName` (`TotalFats`,\n`DietaryFiber`, `DietaryProtein`, …); the integer `quantityType` beside it is the\nsame value and is only for clients that predate the name.\n\nUse only with a meal ID returned by `get_user_meals`.\n\nUse when the user asks about a specific meal already identified in the\nconversation.\n",
+    "parameters": [
+     {
+      "name": "mealId",
+      "in": "path",
+      "required": true,
+      "description": "The meal ID (GUID), from `get_user_meals`. Never assembled.",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_meal",
+    "description": "Returns one meal in full, including its complete nutrition breakdown in\n`healthKitSamples`. Read each entry's `quantityTypeName` (`TotalFats`,\n`DietaryFiber`, `DietaryProtein`, …); the integer `quantityType` beside it is the\nsame value and is only for clients that predate the name.\n\nUse only with a meal ID returned by `get_user_meals`.\n\nUse when the user asks about a specific meal already identified in the\nconversation.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "mealId"
+     ],
+     "properties": {
+      "mealId": {
+       "type": "string",
+       "description": "The meal ID (GUID), from `get_user_meals`. Never assembled."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_note",
+    "description": "Returns one clinical note in full, including its body, category, and sharing\nstate.\n\nUse only with a note ID returned by `list_notes` or `get_shared_notes`.\n\nReturns 404 when the note does not exist or the requester cannot read it.\n",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "The note ID (GUID), from `list_notes` or `get_shared_notes`.",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_note",
+    "description": "Returns one clinical note in full, including its body, category, and sharing\nstate.\n\nUse only with a note ID returned by `list_notes` or `get_shared_notes`.\n\nReturns 404 when the note does not exist or the requester cannot read it.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "id"
+     ],
+     "properties": {
+      "id": {
+       "type": "string",
+       "description": "The note ID (GUID), from `list_notes` or `get_shared_notes`."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_observation",
+    "description": "Returns one observation in full by ID, including type, dates, source, metadata,\nand tags.\n\nUse only with an observation ID returned by `list_observations`.\n\n`sampleCount` reads 0 unless the samples themselves were fetched, so it cannot be\nused to decide whether a panel has results (AIP-247).\n\n**Never set `includeHealthKitSamples=true`** — the two observation tools spell the\nflag differently and the ban covers both. A single observation can contain an\nunbounded number of measurements. Use `get_observation_samples` when the\nunderlying samples are needed.\n",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "The observation ID (GUID), from `list_observations`.",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "includeHealthKitSamples",
+      "in": "query",
+      "description": "**Leave false.** Payloads are unbounded. Use `get_observation_samples` instead.",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_observation",
+    "description": "Returns one observation in full by ID, including type, dates, source, metadata,\nand tags.\n\nUse only with an observation ID returned by `list_observations`.\n\n`sampleCount` reads 0 unless the samples themselves were fetched, so it cannot be\nused to decide whether a panel has results (AIP-247).\n\n**Never set `includeHealthKitSamples=true`** — the two observation tools spell the\nflag differently and the ban covers both. A single observation can contain an\nunbounded number of measurements. Use `get_observation_samples` when the\nunderlying samples are needed.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "id"
+     ],
+     "properties": {
+      "id": {
+       "type": "string",
+       "description": "The observation ID (GUID), from `list_observations`."
+      },
+      "includeHealthKitSamples": {
+       "type": "boolean",
+       "default": false,
+       "description": "**Leave false.** Payloads are unbounded. Use `get_observation_samples` instead."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_observation_samples",
+    "description": "Returns raw measurement samples over a date range, including the observation they\ncame from and the reference range applicable to the patient.\n\nUse when you need a patient-specific reference range for a named marker — the\nquestion \"is this result normal for this person?\". That is what this tool is for.\n\nIt is not the general history path. Scope the read to an exact `observationId`,\none or more `markerTypeIds`, or both. A call without `markerTypeIds` can return\nevery marker in the selected observation or date window. Always set\n`maxSamplesPerMarker` — for a \"is this normal\" question, 1 is usually right.\nFor a trend over time use `get_marker_averages_compact`, and for a marker's\nindividual readings use `get_marker_samples_compact`.\n\nTo read one observation, send its `observationId`; dates may then be omitted.\nOtherwise send at least one of `recordStartDate` or `recordEndDate` as\n`yyyy-MM-dd`. Either record date can be sent alone; the missing side leaves\nthe range open, even with `observationId`.\nRepeat `markerTypeIds` for each marker GUID to include.\n\n`observationTypes` uses exact matching against the observation type name. The\nfull set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,\n`DailySummary`, `SleepSummary`, `HrvSummary`, `Other`, `LifestyleHabit`,\n`Procedure`, `Condition`, `BodyCompositionSummary`, `Assessment`, `Recovery` and\n`Appointment`. Lab results are `Lab`; a DEXA or InBody report arrives as `Scan`;\na clinician's own measurement is `Exam`. `Appointment` carries no samples at all, so\nfiltering by it here returns nothing by construction.\n\n`appliedReferenceRange` is the range the practice applies to this patient's result,\nfiltered by sex and converted to the sample's unit. It is null when no range applies,\nor when the range could not be put in the sample's unit (always for a text result\nwith no unit). Null alone does not mean the marker has no range; check\n`metaData.referenceRange` when present.\n\n`appliedReferenceRange.source` is a string naming where the range came from:\n`Platform` (the system default), `Org` (the practice's default), `Cohort` (a group\nthe patient belongs to, named in `cohortName`) or `Patient` (set for this person\nindividually). Say which one applied when you report the range. `cohortId` and\n`cohortName` are set only when `source` is `Cohort`.\n\nDo not confuse `appliedReferenceRange` with `metaData.referenceRange`, which is the\nrange printed on the lab report.\n\n`maxSamplesPerMarker` limits the number of newest samples returned per marker.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with\n`hasNextPage`; `totalCount` and `totalPages` come back on the same response.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "query",
+      "description": "Arii user ID whose samples to fetch. This is a query parameter, not a path\nsegment. Defaults to the requester when omitted — send it explicitly on any\npatient read. Not an Airia profile ID.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "observationId",
+      "in": "query",
+      "description": "Optional observation GUID from `list_observations`. Use this for an exact\nlab, scan, assessment, or other observation read. When present, the date\nrange may be omitted.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "markerTypeIds",
+      "in": "query",
+      "description": "Optional nonempty marker filter. Repeat the query parameter for each marker\nGUID. Combine with `observationId` to read selected markers from one\nobservation.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       }
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound.\nSend this, `recordEndDate`, or both; both dates may be omitted when\n`observationId` is present.\n",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no\nupper bound. Send this, `recordStartDate`, or both; both dates may be omitted\nwhen `observationId` is present.\n",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "observationTypes",
+      "in": "query",
+      "description": "Comma-separated exact type names, e.g. `Lab,Scan`. Valid values: Lab,\nDeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary,\nHrvSummary, Other, LifestyleHabit, Procedure, Condition, BodyCompositionSummary,\nAssessment, Recovery, Appointment.\n",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "description": "Optional marker-type tag filter.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "maxSamplesPerMarker",
+      "in": "query",
+      "description": "Cap on the newest samples returned per marker type (>= 1). **Always set it.**\nFor \"is this normal\", 1 is usually right.\n",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "pageNumber",
+      "in": "query",
+      "description": "Page number (0-based, default 0).",
+      "schema": {
+       "type": "integer",
+       "default": 0
+      }
+     },
+     {
+      "name": "pageSize",
+      "in": "query",
+      "description": "Page size (1-100, default 100). The API accepts up to 1000; agents keep to 100 so one result stays small.",
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 100,
+       "default": 100
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_observation_samples",
+    "description": "Returns raw measurement samples over a date range, including the observation they\ncame from and the reference range applicable to the patient.\n\nUse when you need a patient-specific reference range for a named marker — the\nquestion \"is this result normal for this person?\". That is what this tool is for.\n\nIt is not the general history path. Scope the read to an exact `observationId`,\none or more `markerTypeIds`, or both. A call without `markerTypeIds` can return\nevery marker in the selected observation or date window. Always set\n`maxSamplesPerMarker` — for a \"is this normal\" question, 1 is usually right.\nFor a trend over time use `get_marker_averages_compact`, and for a marker's\nindividual readings use `get_marker_samples_compact`.\n\nTo read one observation, send its `observationId`; dates may then be omitted.\nOtherwise send at least one of `recordStartDate` or `recordEndDate` as\n`yyyy-MM-dd`. Either record date can be sent alone; the missing side leaves\nthe range open, even with `observationId`.\nRepeat `markerTypeIds` for each marker GUID to include.\n\n`observationTypes` uses exact matching against the observation type name. The\nfull set is `Lab`, `DeviceTracking`, `SelfReported`, `Scan`, `Exam`, `Activity`,\n`DailySummary`, `SleepSummary`, `HrvSummary`, `Other`, `LifestyleHabit`,\n`Procedure`, `Condition`, `BodyCompositionSummary`, `Assessment`, `Recovery` and\n`Appointment`. Lab results are `Lab`; a DEXA or InBody report arrives as `Scan`;\na clinician's own measurement is `Exam`. `Appointment` carries no samples at all, so\nfiltering by it here returns nothing by construction.\n\n`appliedReferenceRange` is the range the practice applies to this patient's result,\nfiltered by sex and converted to the sample's unit. It is null when no range applies,\nor when the range could not be put in the sample's unit (always for a text result\nwith no unit). Null alone does not mean the marker has no range; check\n`metaData.referenceRange` when present.\n\n`appliedReferenceRange.source` is a string naming where the range came from:\n`Platform` (the system default), `Org` (the practice's default), `Cohort` (a group\nthe patient belongs to, named in `cohortName`) or `Patient` (set for this person\nindividually). Say which one applied when you report the range. `cohortId` and\n`cohortName` are set only when `source` is `Cohort`.\n\nDo not confuse `appliedReferenceRange` with `metaData.referenceRange`, which is the\nrange printed on the lab report.\n\n`maxSamplesPerMarker` limits the number of newest samples returned per marker.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with\n`hasNextPage`; `totalCount` and `totalPages` come back on the same response.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Optional marker-type tag filter."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID whose samples to fetch. This is a query parameter, not a path\nsegment. Defaults to the requester when omitted — send it explicitly on any\npatient read. Not an Airia profile ID.\n"
+      },
+      "pageSize": {
+       "type": "number",
+       "default": 100,
+       "description": "Page size (1-100, default 100). The API accepts up to 1000; agents keep to 100 so one result stays small."
+      },
+      "pageNumber": {
+       "type": "number",
+       "default": 0,
+       "description": "Page number (0-based, default 0)."
+      },
+      "markerTypeIds": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "description": "Optional nonempty marker filter. Repeat the query parameter for each marker\nGUID. Combine with `observationId` to read selected markers from one\nobservation.\n"
+      },
+      "observationId": {
+       "type": "string",
+       "description": "Optional observation GUID from `list_observations`. Use this for an exact\nlab, scan, assessment, or other observation read. When present, the date\nrange may be omitted.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no\nupper bound. Send this, `recordStartDate`, or both; both dates may be omitted\nwhen `observationId` is present.\n"
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound.\nSend this, `recordEndDate`, or both; both dates may be omitted when\n`observationId` is present.\n"
+      },
+      "observationTypes": {
+       "type": "string",
+       "description": "Comma-separated exact type names, e.g. `Lab,Scan`. Valid values: Lab,\nDeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary,\nHrvSummary, Other, LifestyleHabit, Procedure, Condition, BodyCompositionSummary,\nAssessment, Recovery, Appointment.\n"
+      },
+      "maxSamplesPerMarker": {
+       "type": "number",
+       "description": "Cap on the newest samples returned per marker type (>= 1). **Always set it.**\nFor \"is this normal\", 1 is usually right.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_out_of_range_results",
+    "description": "Returns the person's lab results that sit outside their normal band. Each one has a\nserver-computed `flag`: `L` means below the normal band and `H` means above it. It also\nhas a `severity` (`Borderline` or `OutOfRange`), the normal band's bounds\n(`normalRange.min` / `normalRange.max`, where null means open on that side), the\nrange's source, and the draw date.\n\n**Use this whenever you are asked to flag, list or summarise out-of-range lab\nresults.** It is the one read that gives, for each result, the side it is off, the\nrange it was judged against, where that range came from and the draw date. Band\nlabels on `get_observation_samples` (`segments[].label`) are alert levels, not\ndirections: in most ranges \"Low\" is the in-range green band and \"High\" is a red band\non either side. Never turn a band label into \"low\" or \"high\". Take the direction from\n`flag` only.\n\n`rangeSource` says whose range decided the flag. `LabReport` is the range printed on\nthe lab report. `Patient`, `Cohort`, `Org` (the practice) and `Platform` (the\ndefault) are the resolved tiers; `cohortName` is set for `Cohort`. When the lab report\ndecided the flag and a practice or platform range also applies, that range is in\n`alternateRange` with its own `flag`. Say which source you used, and give the draw\ndate (`drawDate`) for every flag.\n\n`sexSpecific` is `Male` or `Female` when the band used was sex-specific. Say so.\n\n`noRange` lists the results no range could judge, each with a `reason`:\n`NoRangeDefined`, `SexUnknown` (only sex-specific bands exist and the person has no\nMale/Female sex on record), `UnitMismatch`, `TextResult` or\n`UnrecognizedRangeLabels`. For these, say there is no reference range to judge\nagainst and give no flag. Never supply a range from general knowledge. A result\nmissing from `results` is only in range if it was counted in `inRangeCount`.\n\nWhen `accessRestricted` is true, your access to this person covers only some marker\ntypes, so lab results outside it were never read. An empty or short `results` then\ndoes not mean nothing is out of range: say the check covered only the results you\nare allowed to see.\n\n`latestOnly` (default `true`) judges only each marker's most recent draw in the\nwindow. Pass `false` to judge every draw, for \"has this been high before\". Both\ndates are optional. Omit them to judge every result on file; `recordEndDate` before\n`recordStartDate` returns 400. When `truncated` is true the read stopped at its\nsample cap. Narrow the window, and say the list may be incomplete.\n\n`documentId` is the uploaded lab report the result was extracted from (null for\nresults from a connector). `observationId` is the lab panel and `sampleId` the result.\n\nOmit `requestingUserId` under Bearer/passthrough: the session identifies the caller\nand any value sent is discarded. On the legacy `X-API-Key` path it is still the\ncaller's identity.\n\nOn a share-based read the start date may be narrowed to the share's own window.\n\nIf this read fails, say you could not check the results against their ranges and\nflag nothing. A failure is never evidence that the results are normal.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "requestingUserId",
+      "in": "query",
+      "description": "Optional, and best omitted. The API resolves the requester from the authenticated\nsession and discards whatever is sent here, so calling `get_current_user` just to\nfill it is a wasted round trip and a chance to send the wrong id (AIP-245). It is\nhonoured only on the legacy `X-API-Key` path. If you do send it, it is the caller's\nown Arii user ID — never the patient's, an Airia profile ID, or a Keycloak `sub`.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Optional first draw date as a local calendar date (YYYY-MM-DD), inclusive.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "Optional last draw date as a local calendar date (YYYY-MM-DD), inclusive.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "latestOnly",
+      "in": "query",
+      "description": "`true` (default) judges only each marker's most recent draw in the window.\n`false` judges every draw.\n",
+      "schema": {
+       "type": "boolean",
+       "default": true
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_out_of_range_results",
+    "description": "Returns the person's lab results that sit outside their normal band. Each one has a\nserver-computed `flag`: `L` means below the normal band and `H` means above it. It also\nhas a `severity` (`Borderline` or `OutOfRange`), the normal band's bounds\n(`normalRange.min` / `normalRange.max`, where null means open on that side), the\nrange's source, and the draw date.\n\n**Use this whenever you are asked to flag, list or summarise out-of-range lab\nresults.** It is the one read that gives, for each result, the side it is off, the\nrange it was judged against, where that range came from and the draw date. Band\nlabels on `get_observation_samples` (`segments[].label`) are alert levels, not\ndirections: in most ranges \"Low\" is the in-range green band and \"High\" is a red band\non either side. Never turn a band label into \"low\" or \"high\". Take the direction from\n`flag` only.\n\n`rangeSource` says whose range decided the flag. `LabReport` is the range printed on\nthe lab report. `Patient`, `Cohort`, `Org` (the practice) and `Platform` (the\ndefault) are the resolved tiers; `cohortName` is set for `Cohort`. When the lab report\ndecided the flag and a practice or platform range also applies, that range is in\n`alternateRange` with its own `flag`. Say which source you used, and give the draw\ndate (`drawDate`) for every flag.\n\n`sexSpecific` is `Male` or `Female` when the band used was sex-specific. Say so.\n\n`noRange` lists the results no range could judge, each with a `reason`:\n`NoRangeDefined`, `SexUnknown` (only sex-specific bands exist and the person has no\nMale/Female sex on record), `UnitMismatch`, `TextResult` or\n`UnrecognizedRangeLabels`. For these, say there is no reference range to judge\nagainst and give no flag. Never supply a range from general knowledge. A result\nmissing from `results` is only in range if it was counted in `inRangeCount`.\n\nWhen `accessRestricted` is true, your access to this person covers only some marker\ntypes, so lab results outside it were never read. An empty or short `results` then\ndoes not mean nothing is out of range: say the check covered only the results you\nare allowed to see.\n\n`latestOnly` (default `true`) judges only each marker's most recent draw in the\nwindow. Pass `false` to judge every draw, for \"has this been high before\". Both\ndates are optional. Omit them to judge every result on file; `recordEndDate` before\n`recordStartDate` returns 400. When `truncated` is true the read stopped at its\nsample cap. Narrow the window, and say the list may be incomplete.\n\n`documentId` is the uploaded lab report the result was extracted from (null for\nresults from a connector). `observationId` is the lab panel and `sampleId` the result.\n\nOmit `requestingUserId` under Bearer/passthrough: the session identifies the caller\nand any value sent is discarded. On the legacy `X-API-Key` path it is still the\ncaller's identity.\n\nOn a share-based read the start date may be narrowed to the share's own window.\n\nIf this read fails, say you could not check the results against their ranges and\nflag nothing. A failure is never evidence that the results are normal.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "latestOnly": {
+       "type": "boolean",
+       "default": true,
+       "description": "`true` (default) judges only each marker's most recent draw in the window.\n`false` judges every draw.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "Optional last draw date as a local calendar date (YYYY-MM-DD), inclusive."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Optional first draw date as a local calendar date (YYYY-MM-DD), inclusive."
+      },
+      "requestingUserId": {
+       "type": "string",
+       "description": "Optional, and best omitted. The API resolves the requester from the authenticated\nsession and discards whatever is sent here, so calling `get_current_user` just to\nfill it is a wasted round trip and a chance to send the wrong id (AIP-245). It is\nhonoured only on the legacy `X-API-Key` path. If you do send it, it is the caller's\nown Arii user ID — never the patient's, an Airia profile ID, or a Keycloak `sub`.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_shared_notes",
+    "description": "Returns clinical notes that a clinician has shared with the patient.\n\nUse for the patient-side view of shared clinical notes.\n\nPrivate and archived notes are excluded.\n\nEach note carries `sharedBy`, `sharedAt` and `sharer` — who shared it and when —\nalongside `creator`, `version` and `hasDraft`.\n\nReturns a plain list, not a page. There is no `pageNumber`.\n\nAn empty result means no notes were shared with the patient. It does not mean the\npatient's chart contains no notes.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "query",
+      "description": "Arii user ID (`UserDto.id` GUID) whose shared notes to fetch — not an Airia\nprofile ID.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_shared_notes",
+    "description": "Returns clinical notes that a clinician has shared with the patient.\n\nUse for the patient-side view of shared clinical notes.\n\nPrivate and archived notes are excluded.\n\nEach note carries `sharedBy`, `sharedAt` and `sharer` — who shared it and when —\nalongside `creator`, `version` and `hasDraft`.\n\nReturns a plain list, not a page. There is no `pageNumber`.\n\nAn empty result means no notes were shared with the patient. It does not mean the\npatient's chart contains no notes.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) whose shared notes to fetch — not an Airia\nprofile ID.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user",
+    "description": "Returns basic identity information for a user: name, email, Airia profile ID,\nactive group, profile image (in `imageBase64`, which holds a URL), and the last\nApple Health sync timestamp.\n\nUse to confirm a user's name or email from a known user ID, or to check whether\nApple Health is still feeding data — a stale sync timestamp explains missing\nrecent readings better than any marker read can.\n\nNo other connector's sync time is here. `lastGarminSyncTimestamp` and\n`lastHealthConnectSyncTimestamp` are on the response and are always null, and no\ntool in this catalog reports when Garmin, Withings, Oura or any other connector\nlast synced.\n\nDoes not return date of birth, sex, timezone, or allergies. Use\n`get_user_preferences` for those.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user",
+    "description": "Returns basic identity information for a user: name, email, Airia profile ID,\nactive group, profile image (in `imageBase64`, which holds a URL), and the last\nApple Health sync timestamp.\n\nUse to confirm a user's name or email from a known user ID, or to check whether\nApple Health is still feeding data — a stale sync timestamp explains missing\nrecent readings better than any marker read can.\n\nNo other connector's sync time is here. `lastGarminSyncTimestamp` and\n`lastHealthConnectSyncTimestamp` are on the response and are always null, and no\ntool in this catalog reports when Garmin, Withings, Oura or any other connector\nlast synced.\n\nDoes not return date of birth, sex, timezone, or allergies. Use\n`get_user_preferences` for those.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_documents",
+    "description": "Returns documents on a user's file, including name, type, tags, and dates.\n\nUse to find documents associated with a person.\n\nEach row carries a `downloadUrl`, the extraction status, and counts of extracted\nfeatures by review state — total, approved, pending and rejected. Those counts say\nwhether extraction is still under human review.\n\nDoes not return the document's contents, and does not return the extracted values\nthemselves — only how many there are. It cannot be used to quote or interpret a\nreport. To read what a document says use `search_user_documents`. To read a lab's\nnumbers use the marker tools.\n\nReturns a plain list, not a page.\n\nThe document owner is selected with `selectedUserId`.\n\n`documentId` is the only filter this read applies. There is no category, type or\nprovider filter: everything on the person's file comes back and any narrowing is\nyours to do on the returned rows. Judge a document by its own fields rather than\nassuming the set was filtered.\n\nOmit `RequestingUserId`. The caller is resolved from the session and any value sent\nhere is discarded.\n",
+    "parameters": [
+     {
+      "name": "SelectedUserId",
+      "in": "query",
+      "required": true,
+      "description": "Arii user ID whose documents to retrieve. Not an Airia profile ID.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "RequestingUserId",
+      "in": "query",
+      "description": "Optional, and best omitted. The caller is resolved from the authenticated\nsession and whatever is sent here is discarded, so calling `get_current_user`\nto fill it is a wasted round trip.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "documentId",
+      "in": "query",
+      "description": "Filter to a specific document ID (GUID).",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_documents",
+    "description": "Returns documents on a user's file, including name, type, tags, and dates.\n\nUse to find documents associated with a person.\n\nEach row carries a `downloadUrl`, the extraction status, and counts of extracted\nfeatures by review state — total, approved, pending and rejected. Those counts say\nwhether extraction is still under human review.\n\nDoes not return the document's contents, and does not return the extracted values\nthemselves — only how many there are. It cannot be used to quote or interpret a\nreport. To read what a document says use `search_user_documents`. To read a lab's\nnumbers use the marker tools.\n\nReturns a plain list, not a page.\n\nThe document owner is selected with `selectedUserId`.\n\n`documentId` is the only filter this read applies. There is no category, type or\nprovider filter: everything on the person's file comes back and any narrowing is\nyours to do on the returned rows. Judge a document by its own fields rather than\nassuming the set was filtered.\n\nOmit `RequestingUserId`. The caller is resolved from the session and any value sent\nhere is discarded.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "SelectedUserId"
+     ],
+     "properties": {
+      "documentId": {
+       "type": "string",
+       "description": "Filter to a specific document ID (GUID)."
+      },
+      "SelectedUserId": {
+       "type": "string",
+       "description": "Arii user ID whose documents to retrieve. Not an Airia profile ID.\n"
+      },
+      "RequestingUserId": {
+       "type": "string",
+       "description": "Optional, and best omitted. The caller is resolved from the authenticated\nsession and whatever is sent here is discarded, so calling `get_current_user`\nto fill it is a wasted round trip.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_journals",
+    "description": "Returns every journal entry a user wrote over a date range, with `totalCount`, the\nnumber of entries in the window. Not paged: the list is the whole window.\n\nUse for the user's own written account of how they were feeling or what they\nexperienced, not for measured health data.\n\n**For how many, quote `totalCount`.** Never count the entries yourself: a long list\nis easy to miscount, and the server has already counted it.\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo entries in the window returns `totalCount: 0` and an empty list. That means\nnothing was written in the window, not that the read failed.\n\nEach entry carries its full `content`, so `get_journal` is not needed to read the\ntext. A field with nothing recorded is left out of the entry.\n\nTreat journal content as the user's account; it may differ from measured health\ndata.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_journals",
+    "description": "Returns every journal entry a user wrote over a date range, with `totalCount`, the\nnumber of entries in the window. Not paged: the list is the whole window.\n\nUse for the user's own written account of how they were feeling or what they\nexperienced, not for measured health data.\n\n**For how many, quote `totalCount`.** Never count the entries yourself: a long list\nis easy to miscount, and the server has already counted it.\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo entries in the window returns `totalCount: 0` and an empty list. That means\nnothing was written in the window, not that the read failed.\n\nEach entry carries its full `content`, so `get_journal` is not needed to read the\ntext. A field with nothing recorded is left out of the entry.\n\nTreat journal content as the user's account; it may differ from measured health\ndata.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_marker_types_with_data",
+    "description": "Returns the marker types that have at least one sample in the user's complete\nhistory.\n\n**Call this first, before any other marker read, for the patient the question is\nabout.** It is the only tool that says which markers this person actually has, so it\nis what turns a name in a question into an id you can safely ask for. It applies to a\npatient you are reading as a clinician exactly as it does to yourself: access is\nresolved from who is asking, and no header is involved.\n\nMarker types only — no values, no dates, no ranges — and it covers the person's whole\nhistory, so a marker here may still have no reading in the window you go on to ask\nabout. Its `category` is a numeric id rather than a name; match on `name` and\n`aliases`.\n\nA marker absent from this list is not recorded for this patient, and saying so needs\nno further call. A 403 is an access problem and never an absence.\n\nIt does not say which sources a marker came from. The compact marker reads do: every\nrow names its own source in `dataSourceName`. Call `get_marker_data_sources` with the\nids you matched here only when the question is about the sources themselves, such as\n\"which devices track my sleep?\".\n\nThen read what the question calls for, scoped to these ids with `specificMarkers`:\n`get_marker_summary_compact` for current values, `get_marker_averages_compact` for a\ntrend or a goal, `get_marker_samples_compact` for individual readings,\n`get_observation_samples` for whether a result is normal for this person.\n\n**`tags=labresult` lists only the patient's lab markers.** To read every lab a patient\nhas, call this with `tags=labresult`, then read the ids in groups of up to 20 with\n`get_marker_samples_compact`, following `nextCursor` on each.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "excludeSkipDailyAggregations",
+      "in": "query",
+      "description": "When true, drop marker types whose only samples carry the\n`skip-daily-aggregations` tag — activity-derived device samples not meant for\ndaily display. Default false, which returns everything the person has.\n",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "description": "Only marker types carrying any of these tags. Repeat the parameter for more than\none (`tags=labresult&tags=vital`). Tags are compared trimmed and ignoring case.\n`labresult` is the tag of lab markers. A request whose every tag is blank is a 400.\n",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_marker_types_with_data",
+    "description": "Returns the marker types that have at least one sample in the user's complete\nhistory.\n\n**Call this first, before any other marker read, for the patient the question is\nabout.** It is the only tool that says which markers this person actually has, so it\nis what turns a name in a question into an id you can safely ask for. It applies to a\npatient you are reading as a clinician exactly as it does to yourself: access is\nresolved from who is asking, and no header is involved.\n\nMarker types only — no values, no dates, no ranges — and it covers the person's whole\nhistory, so a marker here may still have no reading in the window you go on to ask\nabout. Its `category` is a numeric id rather than a name; match on `name` and\n`aliases`.\n\nA marker absent from this list is not recorded for this patient, and saying so needs\nno further call. A 403 is an access problem and never an absence.\n\nIt does not say which sources a marker came from. The compact marker reads do: every\nrow names its own source in `dataSourceName`. Call `get_marker_data_sources` with the\nids you matched here only when the question is about the sources themselves, such as\n\"which devices track my sleep?\".\n\nThen read what the question calls for, scoped to these ids with `specificMarkers`:\n`get_marker_summary_compact` for current values, `get_marker_averages_compact` for a\ntrend or a goal, `get_marker_samples_compact` for individual readings,\n`get_observation_samples` for whether a result is normal for this person.\n\n**`tags=labresult` lists only the patient's lab markers.** To read every lab a patient\nhas, call this with `tags=labresult`, then read the ids in groups of up to 20 with\n`get_marker_samples_compact`, following `nextCursor` on each.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Only marker types carrying any of these tags. Repeat the parameter for more than\none (`tags=labresult&tags=vital`). Tags are compared trimmed and ignoring case.\n`labresult` is the tag of lab markers. A request whose every tag is blank is a 400.\n"
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "excludeSkipDailyAggregations": {
+       "type": "boolean",
+       "default": false,
+       "description": "When true, drop marker types whose only samples carry the\n`skip-daily-aggregations` tag — activity-derived device samples not meant for\ndaily display. Default false, which returns everything the person has.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_meals",
+    "description": "Returns every meal a user recorded over a date range, with its nutrition, and\n`totalCount`, the number of meals in the window. Not paged: the list is the whole\nwindow.\n\n**For how many, quote `totalCount`.** Never count the meals yourself: a long list\nis easy to miscount, and the server has already counted it.\n\nNutrition arrives in `healthKitSamples`, one entry per nutrient. Read each entry's\n`quantityTypeName` (`TotalFats`, `DietaryFiber`, `DietaryProtein`, …). Never infer a\nnutrient from the order entries arrive in: fibre and total fat, and carbohydrates and\nprotein, are easy to transpose and the reply gives the reader no way to notice.\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo meals in the window returns `totalCount: 0` and an empty list. That is not an\nerror, and it does not mean the person did not eat. Dietary marker data can exist\nwithout meal records.\n\nA field with nothing recorded is left out of the meal. A meal with no `dataSource`\nwas entered by hand.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_meals",
+    "description": "Returns every meal a user recorded over a date range, with its nutrition, and\n`totalCount`, the number of meals in the window. Not paged: the list is the whole\nwindow.\n\n**For how many, quote `totalCount`.** Never count the meals yourself: a long list\nis easy to miscount, and the server has already counted it.\n\nNutrition arrives in `healthKitSamples`, one entry per nutrient. Read each entry's\n`quantityTypeName` (`TotalFats`, `DietaryFiber`, `DietaryProtein`, …). Never infer a\nnutrient from the order entries arrive in: fibre and total fat, and carbohydrates and\nprotein, are easy to transpose and the reply gives the reader no way to notice.\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo meals in the window returns `totalCount: 0` and an empty list. That is not an\nerror, and it does not mean the person did not eat. Dietary marker data can exist\nwithout meal records.\n\nA field with nothing recorded is left out of the meal. A meal with no `dataSource`\nwas entered by hand.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_preferences",
+    "description": "Returns a user's profile information: date of birth, sex, timezone, height,\nweight, allergies, dietary preferences, and goals.\n\nUse for profile information, not measured health data.\n\nFor permitted cross-user reads, fields may be filtered by the requester's\npermissions. A missing field may therefore be hidden rather than unset — never\nreport it as \"not recorded\".\n\nIf no timezone was selected, `timeZoneIdentifier` defaults to `America/New_York`.\nTreat this as a default, not a user preference.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_preferences",
+    "description": "Returns a user's profile information: date of birth, sex, timezone, height,\nweight, allergies, dietary preferences, and goals.\n\nUse for profile information, not measured health data.\n\nFor permitted cross-user reads, fields may be filtered by the requester's\npermissions. A missing field may therefore be hidden rather than unset — never\nreport it as \"not recorded\".\n\nIf no timezone was selected, `timeZoneIdentifier` defaults to `America/New_York`.\nTreat this as a default, not a user preference.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "get_user_symptom_details",
+    "description": "Returns every symptom a user recorded over a date range, newest start first, with\n`totalCount`, the number of entries in the window. Not paged: the list is the whole\nwindow. Each entry carries `symptomName`, `symptomCategory`, `intensity` (0-10),\n`notes`, `startDate`, `endDate` and `duration`; a field with nothing recorded is\nleft out.\n\n**For how many, quote `totalCount`.** Never count the entries yourself: a long list\nis easy to miscount, and the server has already counted it.\n\n`duration` is in minutes: 420 means 7 hours. A recorded duration means the symptom\nhas an end; for duration-only records, `endDate` is `startDate` plus `duration`.\nLegacy stored end dates are preserved. Only when both `endDate` and `duration` are\nabsent is no end recorded; describe the symptom as ongoing, without inferring\nclinical status.\n\nOmit `requestingUserId` under Bearer/passthrough: the session identifies the caller\nand any value sent is discarded. On the legacy `X-API-Key` path it is still the\ncaller's identity, and omitting it there returns 400 \"RequestingUserId parameter is\nrequired.\"\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo entries in the window returns `totalCount: 0` and an empty list.\n\n**To find a symptom that is still going**, for example when the person says it got\nworse, send `open: true` and `recordEndDate` as today, with no `symptomIds`. Only\nentries with neither `endDate` nor `duration` come back, usually a few, and each\ncarries its `symptomName`; match the symptom by name there. If none matches, none\nis open. Never look for the open entry in the full record yourself.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "requestingUserId",
+      "in": "query",
+      "description": "Optional, and best omitted. The API resolves the requester from the authenticated\nsession and discards whatever is sent here, so calling `get_current_user` just to\nfill it is a wasted round trip and a chance to send the wrong id (AIP-245). It is\nhonoured only on the legacy `X-API-Key` path. If you do send it, it is the caller's\nown Arii user ID — never the patient's, an Airia profile ID, or a Keycloak `sub`.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "recordStartDate",
+      "in": "query",
+      "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "recordEndDate",
+      "in": "query",
+      "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "symptomIds",
+      "in": "query",
+      "description": "Only entries of these symptoms. Catalog IDs from `list_symptoms`. Omit for every symptom.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       }
+      }
+     },
+     {
+      "name": "open",
+      "in": "query",
+      "description": "When true, only entries still going, with neither endDate nor duration. Omit or false for every entry.",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_get_user_symptom_details",
+    "description": "Returns every symptom a user recorded over a date range, newest start first, with\n`totalCount`, the number of entries in the window. Not paged: the list is the whole\nwindow. Each entry carries `symptomName`, `symptomCategory`, `intensity` (0-10),\n`notes`, `startDate`, `endDate` and `duration`; a field with nothing recorded is\nleft out.\n\n**For how many, quote `totalCount`.** Never count the entries yourself: a long list\nis easy to miscount, and the server has already counted it.\n\n`duration` is in minutes: 420 means 7 hours. A recorded duration means the symptom\nhas an end; for duration-only records, `endDate` is `startDate` plus `duration`.\nLegacy stored end dates are preserved. Only when both `endDate` and `duration` are\nabsent is no end recorded; describe the symptom as ongoing, without inferring\nclinical status.\n\nOmit `requestingUserId` under Bearer/passthrough: the session identifies the caller\nand any value sent is discarded. On the legacy `X-API-Key` path it is still the\ncaller's identity, and omitting it there returns 400 \"RequestingUserId parameter is\nrequired.\"\n\nSend `recordStartDate`, `recordEndDate`, or both, as `yyyy-MM-dd`. They are the\npatient's own calendar days, and the end day is covered in full. Either alone leaves\nthat side open: for the whole record, send `recordEndDate` as today and no start.\nNeither, or a start after the end, returns 400.\n\nNo entries in the window returns `totalCount: 0` and an empty list.\n\n**To find a symptom that is still going**, for example when the person says it got\nworse, send `open: true` and `recordEndDate` as today, with no `symptomIds`. Only\nentries with neither `endDate` nor `duration` come back, usually a few, and each\ncarries its `symptomName`; match the symptom by name there. If none matches, none\nis open. Never look for the open entry in the full record yourself.\n\nIf this read fails, say you could not retrieve the data. A failure is never\nevidence that the person has none.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "userId"
+     ],
+     "properties": {
+      "open": {
+       "type": "boolean",
+       "description": "When true, only entries still going, with neither endDate nor duration. Omit or false for every entry."
+      },
+      "userId": {
+       "type": "string",
+       "description": "Arii user ID (`UserDto.id` GUID) this operation applies to — the subject of the\nread, from execution context. Never the requester's own id on a clinician turn,\nand never an Airia profile ID, Keycloak `sub`, or group ID: those return 404\n\"No user found\" under Bearer auth.\n"
+      },
+      "symptomIds": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "description": "Only entries of these symptoms. Catalog IDs from `list_symptoms`. Omit for every symptom."
+      },
+      "recordEndDate": {
+       "type": "string",
+       "description": "Patient local calendar end day (YYYY-MM-DD), covered in full. Omit for no upper bound. Send this, recordStartDate, or both."
+      },
+      "recordStartDate": {
+       "type": "string",
+       "description": "Patient local calendar start day (YYYY-MM-DD). Omit for no lower bound. Send this, recordEndDate, or both."
+      },
+      "requestingUserId": {
+       "type": "string",
+       "description": "Optional, and best omitted. The API resolves the requester from the authenticated\nsession and discards whatever is sent here, so calling `get_current_user` just to\nfill it is a wasted round trip and a chance to send the wrong id (AIP-245). It is\nhonoured only on the legacy `X-API-Key` path. If you do send it, it is the caller's\nown Arii user ID — never the patient's, an Airia profile ID, or a Keycloak `sub`.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "list_marker_types",
+    "description": "Returns the platform marker catalog with search and paging, including marker name,\naliases, unit, display precision, category, and system reference ranges.\n\nUse when you need to search or inspect marker definitions, including the question\n\"what is the normal range for this marker?\".\n\nFilter with `search`, `name`, `tags` or `labProvider` rather than paging through\nthe catalog.\n\n`category` here is the same numeric category id that `get_user_marker_types_with_data`\nreturns, stored as text — not a display name. Sending \"Lipids & Cardiovascular Risk\"\nmatches nothing and returns an empty page, which is not the same as the catalog\nhaving no such markers. Filter by `name`, `search` or `tags` instead.\n\nThe `systemReferenceRanges` are platform-level ranges, not patient-specific ranges.\nDo not use them to determine whether a patient's result is normal, and when nothing\ncomes back say the range is not on record rather than supplying one from general\nknowledge.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 10.\n",
+    "parameters": [
+     {
+      "name": "search",
+      "in": "query",
+      "description": "Filter by name containing this string.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "query",
+      "description": "Exact name filter.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "description": "Exact match on the marker type's category **id stored as text** (e.g. \"7\"), not\na display name. Prefer `name`, `search` or `tags` unless you already hold a\nnumeric category id.\n",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "tenantId",
+      "in": "query",
+      "description": "Fetch marker types for a specific tenant/group (GUID).",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "includeDefault",
+      "in": "query",
+      "description": "If true, include marker types with no tenantId (system defaults). Default true.",
+      "schema": {
+       "type": "boolean",
+       "default": true
+      }
+     },
+     {
+      "name": "withQuantityType",
+      "in": "query",
+      "description": "Filter on whether QuantityType is set. true = only non-null; false = only null;\nomit to return both.\n",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "description": "Filter by tags.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "labProvider",
+      "in": "query",
+      "description": "Filter by lab provider.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "includeAllTags",
+      "in": "query",
+      "description": "If true, include all tags in the response.",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "excludeCategories",
+      "in": "query",
+      "description": "Category IDs to exclude from results.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     {
+      "name": "pageNumber",
+      "in": "query",
+      "description": "Page number (0-based, default 0).",
+      "schema": {
+       "type": "integer",
+       "default": 0
+      }
+     },
+     {
+      "name": "pageSize",
+      "in": "query",
+      "description": "Page size (1-100, default 10).",
+      "schema": {
+       "type": "integer",
+       "default": 10
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_list_marker_types",
+    "description": "Returns the platform marker catalog with search and paging, including marker name,\naliases, unit, display precision, category, and system reference ranges.\n\nUse when you need to search or inspect marker definitions, including the question\n\"what is the normal range for this marker?\".\n\nFilter with `search`, `name`, `tags` or `labProvider` rather than paging through\nthe catalog.\n\n`category` here is the same numeric category id that `get_user_marker_types_with_data`\nreturns, stored as text — not a display name. Sending \"Lipids & Cardiovascular Risk\"\nmatches nothing and returns an empty page, which is not the same as the catalog\nhaving no such markers. Filter by `name`, `search` or `tags` instead.\n\nThe `systemReferenceRanges` are platform-level ranges, not patient-specific ranges.\nDo not use them to determine whether a patient's result is normal, and when nothing\ncomes back say the range is not on record rather than supplying one from general\nknowledge.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 10.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string",
+       "description": "Exact name filter."
+      },
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Filter by tags."
+      },
+      "search": {
+       "type": "string",
+       "description": "Filter by name containing this string."
+      },
+      "category": {
+       "type": "string",
+       "description": "Exact match on the marker type's category **id stored as text** (e.g. \"7\"), not\na display name. Prefer `name`, `search` or `tags` unless you already hold a\nnumeric category id.\n"
+      },
+      "pageSize": {
+       "type": "number",
+       "default": 10,
+       "description": "Page size (1-100, default 10)."
+      },
+      "tenantId": {
+       "type": "string",
+       "description": "Fetch marker types for a specific tenant/group (GUID)."
+      },
+      "pageNumber": {
+       "type": "number",
+       "default": 0,
+       "description": "Page number (0-based, default 0)."
+      },
+      "labProvider": {
+       "type": "string",
+       "description": "Filter by lab provider."
+      },
+      "includeAllTags": {
+       "type": "boolean",
+       "description": "If true, include all tags in the response."
+      },
+      "includeDefault": {
+       "type": "boolean",
+       "default": true,
+       "description": "If true, include marker types with no tenantId (system defaults). Default true."
+      },
+      "withQuantityType": {
+       "type": "boolean",
+       "description": "Filter on whether QuantityType is set. true = only non-null; false = only null;\nomit to return both.\n"
+      },
+      "excludeCategories": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Category IDs to exclude from results."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "list_note_categories",
+    "description": "Returns the platform's note categories, including each category's ID and exact\nname.\n\nUse when you need the valid category IDs or exact category names for filtering\nnotes.\n\nThis catalog is not patient-specific.\n"
+   },
+   "tool": {
+    "name": "arii_mcp_list_note_categories",
+    "description": "Returns the platform's note categories, including each category's ID and exact\nname.\n\nUse when you need the valid category IDs or exact category names for filtering\nnotes.\n\nThis catalog is not patient-specific.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {}
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "list_notes",
+    "description": "Returns clinical notes for a provider.\n\nUse `patientId` to scope the results to a specific patient. Without it, the tool\nmay return notes across the tenant and the results may belong to unrelated\npatients.\n\nPatients should use `get_shared_notes` instead.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 20. Outside that range\nreturns 400.\n\nThis is the v1 shape, where a note's `date` is a full timestamp. The v2 route\nreturns the same fields with `date` as a calendar day; the catalog stays on v1\ndeliberately so the tool contract does not change under agents mid-flight.\n",
+    "parameters": [
+     {
+      "name": "pageNumber",
+      "in": "query",
+      "description": "Page number (0-based, default 0).",
+      "schema": {
+       "type": "integer",
+       "default": 0
+      }
+     },
+     {
+      "name": "pageSize",
+      "in": "query",
+      "description": "Page size (1-100, default 20).",
+      "schema": {
+       "type": "integer",
+       "default": 20
+      }
+     },
+     {
+      "name": "includeDrafts",
+      "in": "query",
+      "description": "Include draft notes (default true).",
+      "schema": {
+       "type": "boolean",
+       "default": true
+      }
+     },
+     {
+      "name": "createdBy",
+      "in": "query",
+      "description": "Filter by creator user ID (GUID).",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "patientId",
+      "in": "query",
+      "description": "The patient's Arii user ID (`UserDto.id` GUID) — not an Airia profile ID.\n**Always set this.** Without it the call reaches across the tenant.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "isPrivate",
+      "in": "query",
+      "description": "Filter by the note's private flag. Omit to return both private and non-private notes.",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "isArchived",
+      "in": "query",
+      "description": "Filter by archived status.",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "search",
+      "in": "query",
+      "description": "Search text to filter by title or content.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "categories",
+      "in": "query",
+      "description": "Filter by category names (comma-separated). Exact strings come from `list_note_categories`.",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_list_notes",
+    "description": "Returns clinical notes for a provider.\n\nUse `patientId` to scope the results to a specific patient. Without it, the tool\nmay return notes across the tenant and the results may belong to unrelated\npatients.\n\nPatients should use `get_shared_notes` instead.\n\n`pageNumber` is 0-based and `pageSize` is 1-100, default 20. Outside that range\nreturns 400.\n\nThis is the v1 shape, where a note's `date` is a full timestamp. The v2 route\nreturns the same fields with `date` as a calendar day; the catalog stays on v1\ndeliberately so the tool contract does not change under agents mid-flight.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "search": {
+       "type": "string",
+       "description": "Search text to filter by title or content."
+      },
+      "pageSize": {
+       "type": "number",
+       "default": 20,
+       "description": "Page size (1-100, default 20)."
+      },
+      "createdBy": {
+       "type": "string",
+       "description": "Filter by creator user ID (GUID)."
+      },
+      "isPrivate": {
+       "type": "boolean",
+       "description": "Filter by the note's private flag. Omit to return both private and non-private notes."
+      },
+      "patientId": {
+       "type": "string",
+       "description": "The patient's Arii user ID (`UserDto.id` GUID) — not an Airia profile ID.\n**Always set this.** Without it the call reaches across the tenant.\n"
+      },
+      "categories": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "Filter by category names (comma-separated). Exact strings come from `list_note_categories`."
+      },
+      "isArchived": {
+       "type": "boolean",
+       "description": "Filter by archived status."
+      },
+      "pageNumber": {
+       "type": "number",
+       "default": 0,
+       "description": "Page number (0-based, default 0)."
+      },
+      "includeDrafts": {
+       "type": "boolean",
+       "default": true,
+       "description": "Include draft notes (default true)."
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "list_observations",
+    "description": "Returns events in a user's record over a date range, such as lab panels, scans,\nworkouts, and self-reports. Includes event type, date, and source.\n\nUse to find or identify observations. Use marker tools for the measurements\ninside an observation.\n\nUse `RecordStartDate` and/or `RecordEndDate` as `yyyy-MM-dd`. Either date can be\nused alone.\n\nDo not omit the date range to work around an error. Without a range, the tool\nreturns the most recent rows, which may answer a different question.\n\n`PageNumber` is 0-based and `PageSize` is 1-100, default 10.\n\n**For how many, quote `totalCount`.** It counts every observation matching the\nrequest, across all pages. A page holds at most `PageSize` rows, so counting the\nrows comes out short as soon as there is a second page, and a long page is easy to\nmiscount.\n\n**Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside\nevery matching event. One lab panel came back at 288,000 characters; a ten-panel\nrequest was rejected outright for exceeding the context window. For underlying\nsamples use `get_observation_samples`.\n\n`MarkerTypeIds` narrows the result to the observations that carry those marker\ntypes, which is the cheap way to find the panel a named marker came from. Pass\n`markerTypeId` values, and leave `IncludeHealthKitSamples` false — this scopes which\nobservations come back, not how much each one carries.\n",
+    "parameters": [
+     {
+      "name": "UserId",
+      "in": "query",
+      "description": "Filter by Arii user ID. Do not pass an Airia profile ID.\n",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "Type",
+      "in": "query",
+      "description": "Filter by observation type: Lab, DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary, HrvSummary, Other, LifestyleHabit, Procedure, Condition, Assessment, Appointment, BodyCompositionSummary, Recovery.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "Lab",
+        "DeviceTracking",
+        "SelfReported",
+        "Scan",
+        "Exam",
+        "Activity",
+        "DailySummary",
+        "SleepSummary",
+        "HrvSummary",
+        "Other",
+        "LifestyleHabit",
+        "Procedure",
+        "Condition",
+        "Assessment",
+        "Appointment",
+        "BodyCompositionSummary",
+        "Recovery"
+       ]
+      }
+     },
+     {
+      "name": "MarkerTypeIds",
+      "in": "query",
+      "description": "Restrict to observations carrying these marker types. Marker type IDs (GUIDs)\nfrom `get_user_marker_types_with_data` or `bulk_search_marker_types` — the same\nids `specificMarkers` takes on the marker tools.\n",
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       }
+      }
+     },
+     {
+      "name": "SubType",
+      "in": "query",
+      "description": "Filter by observation sub-type.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Source",
+      "in": "query",
+      "description": "Filter by data source (exact match, e.g., \"Oura\", \"Fitbit\", \"Garmin\").",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "RecordStartDate",
+      "in": "query",
+      "description": "Patient local calendar start day (YYYY-MM-DD). Can be used alone.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "RecordEndDate",
+      "in": "query",
+      "description": "Patient local calendar end day (YYYY-MM-DD). Can be used alone.",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "StartDate",
+      "in": "query",
+      "description": "Instant range start. UTC RFC3339 **with `Z` only**, e.g. `2026-08-01T00:00:00Z`.\nA bare `2026-08-01` returns 400. Prefer the record-date pair.\n",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      }
+     },
+     {
+      "name": "EndDate",
+      "in": "query",
+      "description": "Instant range end. UTC RFC3339 **with `Z` only**. A bare date returns 400.\nPrefer the record-date pair.\n",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      }
+     },
+     {
+      "name": "PageNumber",
+      "in": "query",
+      "description": "Page number (0-based).",
+      "schema": {
+       "type": "integer",
+       "default": 0
+      }
+     },
+     {
+      "name": "PageSize",
+      "in": "query",
+      "description": "Page size (1-100, default 10). Rejected outside that range.",
+      "schema": {
+       "type": "integer",
+       "default": 10
+      }
+     },
+     {
+      "name": "IncludeHealthKitSamples",
+      "in": "query",
+      "description": "**Leave false.** True repeats every nested sample payload per row and blows\nthe model context. Use `get_observation_samples` for values.\n",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      }
+     }
+    ]
+   },
+   "tool": {
+    "name": "arii_mcp_list_observations",
+    "description": "Returns events in a user's record over a date range, such as lab panels, scans,\nworkouts, and self-reports. Includes event type, date, and source.\n\nUse to find or identify observations. Use marker tools for the measurements\ninside an observation.\n\nUse `RecordStartDate` and/or `RecordEndDate` as `yyyy-MM-dd`. Either date can be\nused alone.\n\nDo not omit the date range to work around an error. Without a range, the tool\nreturns the most recent rows, which may answer a different question.\n\n`PageNumber` is 0-based and `PageSize` is 1-100, default 10.\n\n**For how many, quote `totalCount`.** It counts every observation matching the\nrequest, across all pages. A page holds at most `PageSize` rows, so counting the\nrows comes out short as soon as there is a second page, and a long page is easy to\nmiscount.\n\n**Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside\nevery matching event. One lab panel came back at 288,000 characters; a ten-panel\nrequest was rejected outright for exceeding the context window. For underlying\nsamples use `get_observation_samples`.\n\n`MarkerTypeIds` narrows the result to the observations that carry those marker\ntypes, which is the cheap way to find the panel a named marker came from. Pass\n`markerTypeId` values, and leave `IncludeHealthKitSamples` false — this scopes which\nobservations come back, not how much each one carries.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {
+      "Type": {
+       "enum": [
+        "Lab",
+        "DeviceTracking",
+        "SelfReported",
+        "Scan",
+        "Exam",
+        "Activity",
+        "DailySummary",
+        "SleepSummary",
+        "HrvSummary",
+        "Other",
+        "LifestyleHabit",
+        "Procedure",
+        "Condition",
+        "Assessment",
+        "Appointment",
+        "BodyCompositionSummary",
+        "Recovery"
+       ],
+       "type": "string",
+       "description": "Filter by observation type: Lab, DeviceTracking, SelfReported, Scan, Exam, Activity, DailySummary, SleepSummary, HrvSummary, Other, LifestyleHabit, Procedure, Condition, Assessment, Appointment, BodyCompositionSummary, Recovery."
+      },
+      "Source": {
+       "type": "string",
+       "description": "Filter by data source (exact match, e.g., \"Oura\", \"Fitbit\", \"Garmin\")."
+      },
+      "UserId": {
+       "type": "string",
+       "description": "Filter by Arii user ID. Do not pass an Airia profile ID.\n"
+      },
+      "EndDate": {
+       "type": "string",
+       "description": "Instant range end. UTC RFC3339 **with `Z` only**. A bare date returns 400.\nPrefer the record-date pair.\n"
+      },
+      "SubType": {
+       "type": "string",
+       "description": "Filter by observation sub-type."
+      },
+      "PageSize": {
+       "type": "number",
+       "default": 10,
+       "description": "Page size (1-100, default 10). Rejected outside that range."
+      },
+      "StartDate": {
+       "type": "string",
+       "description": "Instant range start. UTC RFC3339 **with `Z` only**, e.g. `2026-08-01T00:00:00Z`.\nA bare `2026-08-01` returns 400. Prefer the record-date pair.\n"
+      },
+      "PageNumber": {
+       "type": "number",
+       "default": 0,
+       "description": "Page number (0-based)."
+      },
+      "MarkerTypeIds": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "description": "Restrict to observations carrying these marker types. Marker type IDs (GUIDs)\nfrom `get_user_marker_types_with_data` or `bulk_search_marker_types` — the same\nids `specificMarkers` takes on the marker tools.\n"
+      },
+      "RecordEndDate": {
+       "type": "string",
+       "description": "Patient local calendar end day (YYYY-MM-DD). Can be used alone."
+      },
+      "RecordStartDate": {
+       "type": "string",
+       "description": "Patient local calendar start day (YYYY-MM-DD). Can be used alone."
+      },
+      "IncludeHealthKitSamples": {
+       "type": "boolean",
+       "default": false,
+       "description": "**Leave false.** True repeats every nested sample payload per row and blows\nthe model context. Use `get_observation_samples` for values.\n"
+      }
+     }
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "list_symptoms",
+    "description": "Returns the platform's supported symptom catalog, including each symptom's\ncanonical ID and name.\n\nUse to resolve symptom IDs and canonical names when interpreting the symptoms a\nperson has recorded, for example the entries returned by `get_user_symptom_details`.\n\nThis catalog is not patient-specific.\n"
+   },
+   "tool": {
+    "name": "arii_mcp_list_symptoms",
+    "description": "Returns the platform's supported symptom catalog, including each symptom's\ncanonical ID and name.\n\nUse to resolve symptom IDs and canonical names when interpreting the symptoms a\nperson has recorded, for example the entries returned by `get_user_symptom_details`.\n\nThis catalog is not patient-specific.\n",
+    "inputSchema": {
+     "type": "object",
+     "properties": {}
+    }
+   }
+  },
+  {
+   "operation": {
+    "operationId": "search_user_documents",
+    "description": "Searches what a user's uploaded documents say and returns the matching passages.\n\nUse to read or quote a document on the selected user's file — a lab report, a letter,\nan imaging summary. This is the tool for a clinician reading a patient's documents:\nthe data store search tools only ever see the uploads of the person chatting, so on a\nclinician's turn they return the clinician's own files, never the patient's.\n\nThe search runs as the selected user, so it returns that user's files and no one\nelse's. The caller must be allowed to read that user's records; a caller who is not\ngets 403 and no search runs.\n\nEach passage carries its `text`, a similarity `score`, and the document it came from:\n`documentId`, `documentName`, `uploadedAt` and `downloadUrl`. Quote the passage text\nand cite the document by name. A passage from an uploaded note has no `documentId`\nand carries the stored file name.\n\nAn empty list means nothing matched the query in that user's documents. It does not\nmean the user has no documents — `get_user_documents` lists those. Search again with\nthe clinical term rather than the user's wording before reporting that a document does\nnot mention something.\n\nTo search one document, call `get_user_documents` first and pass its `id` in\n`documentIds`. Ids that do not belong to the selected user are ignored; when none\nbelong to them, nothing is searched and the list is empty.\n\nDoes not return extracted lab values. To read a lab's numbers as data use the marker\ntools.\n",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "selectedUserId",
+         "query"
+        ],
+        "properties": {
+         "selectedUserId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Arii user ID whose documents to search. Not an Airia profile ID."
+         },
+         "query": {
+          "type": "string",
+          "description": "The search text. Use the clinical term — \"ferritin\", not \"my iron\"."
+         },
+         "documentIds": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "description": "Optional. Document IDs from `get_user_documents` to search within; all of the user's documents when omitted."
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "tool": {
+    "name": "arii_mcp_search_user_documents",
+    "description": "Searches what a user's uploaded documents say and returns the matching passages.\n\nUse to read or quote a document on the selected user's file — a lab report, a letter,\nan imaging summary. This is the tool for a clinician reading a patient's documents:\nthe data store search tools only ever see the uploads of the person chatting, so on a\nclinician's turn they return the clinician's own files, never the patient's.\n\nThe search runs as the selected user, so it returns that user's files and no one\nelse's. The caller must be allowed to read that user's records; a caller who is not\ngets 403 and no search runs.\n\nEach passage carries its `text`, a similarity `score`, and the document it came from:\n`documentId`, `documentName`, `uploadedAt` and `downloadUrl`. Quote the passage text\nand cite the document by name. A passage from an uploaded note has no `documentId`\nand carries the stored file name.\n\nAn empty list means nothing matched the query in that user's documents. It does not\nmean the user has no documents — `get_user_documents` lists those. Search again with\nthe clinical term rather than the user's wording before reporting that a document does\nnot mention something.\n\nTo search one document, call `get_user_documents` first and pass its `id` in\n`documentIds`. Ids that do not belong to the selected user are ignored; when none\nbelong to them, nothing is searched and the list is empty.\n\nDoes not return extracted lab values. To read a lab's numbers as data use the marker\ntools.\n",
+    "inputSchema": {
+     "type": "object",
+     "required": [
+      "query",
+      "selectedUserId"
+     ],
+     "properties": {
+      "query": {
+       "type": "string",
+       "description": "The search text. Use the clinical term — \"ferritin\", not \"my iron\"."
+      },
+      "documentIds": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "description": "Optional. Document IDs from `get_user_documents` to search within; all of the user's documents when omitted."
+      },
+      "selectedUserId": {
+       "type": "string",
+       "description": "Arii user ID whose documents to search. Not an Airia profile ID."
+      }
+     }
+    }
+   }
+  }
+ ]
+}

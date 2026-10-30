@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "8.0.0"
+  version: "9.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1959,7 +1959,8 @@ paths:
         `appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it
         is stored in, the same way `get_marker_summary_compact` judges it.
 
-        **Paged with a cursor.** Readings come by marker, then date newest first, then the
+        **Paged with a cursor, not a page number.** There is no `pageNumber` or `pageSize`
+        here; send neither. Readings come by marker, then date newest first, then the
         preferred source first, then source name, then time newest first. `limit` is the page
         size: 500 when missing, 0 or negative, and never more than 500. When `nextCursor` is
         not null, call again with the same parameters plus `cursor=<nextCursor>`, and keep
@@ -2012,7 +2013,7 @@ paths:
             default: false
         - name: takePerSource
           in: query
-          description: Only the newest N readings per marker per source, 1–100, inside the window when one is given. With a filter, the newest N matches. Not with latestPerSource.
+          description: Only the newest N readings per marker per source, 1–100, inside the window when one is given. Use it whenever the question asks for the "last N", "latest N" or "most recent N" readings, so only N come back. With a filter, the newest N matches - "her last 5 out-of-range readings this year" is takePerSource=5 with select=OutOfRange and the year's dates. Not with latestPerSource.
           schema:
             type: integer
             minimum: 1

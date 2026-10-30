@@ -1,0 +1,6 @@
+# The model the agents use, reached through Airia's AI Gateway (OpenAI Responses API).
+# The key is never here: it comes from TOOLCALL_MODEL_KEY or a gitignored .env.local.
+# TOOLCALL_MODEL_ENDPOINT overrides the endpoint.
+# gpt-5.6-luna refuses `temperature`, so no request sets it.
+model = "gpt-5.6-luna"
+endpoint = "https://nicoya.gateway.airia.ai/openai/v1/responses"
