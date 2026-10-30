@@ -19,21 +19,27 @@ class MarkerSamplesCompactReadingManyMarkersTest(unittest.TestCase):
         cls.samples = spec["paths"]["/api/v2/Marker/samples-compact/{userId}"]["get"]
         cls.params = {p["name"]: p for p in cls.samples["parameters"] if "name" in p}
         cls.marker_types = spec["paths"]["/api/v2/Users/{userId}/DataDictionary/MarkerTypes"]["get"]
+        cls.info = spec["info"]["description"]
 
-    def test_a_cursor_goes_back_with_exactly_the_same_parameters(self):
+    def test_the_general_note_explains_both_paging_ways_without_naming_tools(self):
+        note = self.info
+        self.assertIn("**Page numbers.**", note)
+        self.assertIn("**Cursor.**", note)
+        self.assertIn("send exactly the same request again with `cursor` set to that value", note)
+        self.assertNotIn("get_marker_samples_compact", note.split("**Paging.**", 1)[1].split("**Dates.**", 1)[0])
+
+    def test_a_cursor_goes_back_with_exactly_the_same_request(self):
         text = self.samples["description"]
-        self.assertIn("call again\nwith exactly the same parameters (the same `specificMarkers`, `takePerSource`, `limit`\nand dates) plus `cursor=<nextCursor>`", text)
-        self.assertIn("Never send a cursor a reply did not give you.", text)
+        self.assertIn("Send exactly the same request again (the same\n  `specificMarkers`, `takePerSource`, `limit` and dates) with `cursor` set to that\n  value.", text)
+        self.assertIn("Send only a cursor a reply gave you.", text)
 
-    def test_a_read_across_many_markers_or_sources_asks_for_small_pages(self):
-        self.assertIn("send\n`limit=100` and follow more, smaller pages", self.samples["description"])
-        self.assertIn("Send 100 when the read spans many markers or many sources.", self.params["limit"]["description"])
+    def test_small_pages_unless_the_request_asks_for_a_size(self):
+        self.assertIn("When the request doesn't ask for a particular page\nsize, send `limit=100`", self.samples["description"])
+        self.assertIn("Send 100 unless the request asks for a particular page size.", self.params["limit"]["description"])
 
     def test_splitting_a_long_list_counts_every_id(self):
-        self.assertIn("an id left out of every group is never read", self.params["specificMarkers"]["description"])
-        self.assertIn("group 1 is ids 1–20, group 2 ids 21–40", self.marker_types["description"])
-        self.assertIn("every id in exactly one group", self.marker_types["description"])
-
+        self.assertIn("an id you leave out is never read", self.params["specificMarkers"]["description"])
+        self.assertIn("ids 1–20, then 21–40, and so on, so every id\nis in exactly one group", self.marker_types["description"])
 
 if __name__ == "__main__":
     unittest.main()

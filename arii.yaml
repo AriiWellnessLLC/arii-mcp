@@ -143,15 +143,21 @@ info:
     does not say it happened. Read the dates that come back before describing the period
     you covered.
 
-    **Pagination:** most paged reads take a 0-based `pageNumber` and `pageSize`. Page sizes
-    and defaults differ per tool and are stated on each. `get_marker_samples_compact` pages
-    with a cursor instead: send its `nextCursor` back as `cursor`, with the same filters,
-    and keep going until `nextCursor` is null. A page can hold fewer readings than `limit`
-    and still have a `nextCursor`, so a short page is not the end. If you stop before
-    `nextCursor` is null, say the answer is partial. `get_marker_summary_compact` and
-    `get_marker_averages_compact` are not paged: they are bounded by their scope. Some
-    record reads are not paged either; their description says so, and they return every
-    record in the window with `totalCount`.
+    **Paging.** A read that can return a long list comes in pages, in one of two ways. Each
+    tool says which one it uses, and its page sizes.
+
+    - **Page numbers.** You ask for a page by its number: `pageNumber`, starting at 0, and
+      `pageSize`, how many rows a page holds. Where the reply has `totalCount` and
+      `hasNextPage`, they say how many rows there are in all pages together and whether
+      another page follows. For "how many", quote `totalCount` rather than counting rows.
+    - **Cursor.** You don't choose a page. The first request has no `cursor`. Every reply
+      has a `nextCursor`: when it is null, you have everything; when it has a value, there is
+      more, so you send exactly the same request again with `cursor` set to that value.
+      Repeat until `nextCursor` is null. `limit` sets how many rows a page holds. A short or
+      even empty page can still have more after it. Send only a cursor a reply gave you.
+
+    If you stop before the last page, say the answer is incomplete. A tool that is not paged
+    says so, and returns everything in its scope.
 
     **Dates.** `recordStartDate`/`recordEndDate` are patient-local calendar days
     (`YYYY-MM-DD`). Prefer them wherever a tool offers them; some reads take only these, and
@@ -1963,18 +1969,22 @@ paths:
         `appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it
         is stored in, the same way `get_marker_summary_compact` judges it.
 
-        **Paged with a cursor.** Readings come by marker, then date newest first, then the
-        preferred source first, then source name, then time newest first. `limit` is the page
-        size: 500 when missing, 0 or negative, and never more than 500. A full page of 500
-        readings is a large reply: when a read spans many markers or many sources, send
-        `limit=100` and follow more, smaller pages. When `nextCursor` is not null, call again
-        with exactly the same parameters (the same `specificMarkers`, `takePerSource`, `limit`
-        and dates) plus `cursor=<nextCursor>`, and keep going until `nextCursor` is null.
-        Never send a cursor a reply did not give you. A page can hold fewer readings than
-        `limit` — even none — and still have a `nextCursor`: a filtered read stops after
-        looking at 5,000 readings and continues on the next page. If you stop before
-        `nextCursor` is null, say the answer is partial. For "how many", call `get_marker_samples_compact_count` with
-        the same filters instead of paging and counting.
+        **Pages and cursors.** This read is paged with a cursor. Readings come back by
+        marker, newest first, the preferred source first. `limit` sets how many readings a
+        page holds, never more than 500. When the request doesn't ask for a particular page
+        size, send `limit=100`: a page of 500 readings is a lot to take in at once.
+
+        Every reply ends with `nextCursor`:
+        - **null:** you have everything for this request.
+        - **a value:** there is more. Send exactly the same request again (the same
+          `specificMarkers`, `takePerSource`, `limit` and dates) with `cursor` set to that
+          value. Keep going until `nextCursor` is null.
+
+        Send only a cursor a reply gave you. A short or even empty page can still have more:
+        a filtered read stops after looking at 5,000 readings and goes on in the next page.
+        If you stop before the last page, say the answer is incomplete. For "how many", call
+        `get_marker_samples_compact_count` with the same filters instead of paging and
+        counting.
 
         `specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are
         required together as `yyyy-MM-dd`, unless `latestPerSource` or `takePerSource` is
@@ -2005,10 +2015,11 @@ paths:
           in: query
           required: true
           description: |
-            1–20 marker type IDs from `get_user_marker_types_with_data`, each copied exactly as
-            listed. Markers outside your access to this person are returned in `withheldIds`.
-            To read more than 20, split the list into groups of up to 20 and count each group:
-            an id left out of every group is never read.
+            The marker ids to read: 1 to 20 in one request, copied exactly as
+            `get_user_marker_types_with_data` gave them. For more than 20, split them into
+            groups of up to 20 and make one request per group. Check that every id is in a
+            group: an id you leave out is never read. Ids you may not see come back in
+            `withheldIds`.
           schema:
             type: array
             minItems: 1
@@ -2060,13 +2071,13 @@ paths:
         - name: cursor
           in: query
           description: |
-            The `nextCursor` of the previous page, unchanged, sent with the same other
-            parameters. Omit it for the first page.
+            Leave it out for the first page. For the next page, send the `nextCursor` of the
+            previous reply, unchanged, with the same other parameters.
           schema:
             type: string
         - name: limit
           in: query
-          description: Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500. Send 100 when the read spans many markers or many sources.
+          description: How many readings one page holds, never more than 500 (left out, 0 or negative means 500). Send 100 unless the request asks for a particular page size.
           schema:
             type: integer
             default: 500
@@ -2425,12 +2436,11 @@ paths:
         trend or a goal, `get_marker_samples_compact` for individual readings,
         `get_observation_samples` for whether a result is normal for this person.
 
-        **`tags=labresult` lists only the patient's lab markers.** To read every lab a patient
-        has, call this with `tags=labresult`, then split the ids, in the order this call
-        returned them, into groups of up to 20: group 1 is ids 1–20, group 2 ids 21–40, and
-        so on, every id in exactly one group. Read every group with
-        `get_marker_samples_compact`; the groups do not depend on each other, so their first
-        calls can go together. Follow each group's `nextCursor` until it is null.
+        **Reading all of a patient's labs.** Call this with `tags=labresult` to get the
+        list of lab ids. Then read them with `get_marker_samples_compact` in groups of up to
+        20, in the order this list gives them: ids 1–20, then 21–40, and so on, so every id
+        is in exactly one group. The groups don't depend on each other, so you can ask for
+        their first pages together. Then follow each group's `nextCursor` until it is null.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -3623,9 +3633,9 @@ components:
           type: string
           nullable: true
           description: >-
-            The cursor of the next page; null on the last page. Send it back as `cursor`, with
-            the same parameters, until it is null. A page shorter than `limit` can still have
-            one.
+            Null when this is the last page. Otherwise send it back as `cursor`, with the same
+            other parameters, to get the next page. A page with fewer readings than `limit`
+            can still have one.
         truncated:
           type: boolean
           deprecated: true
