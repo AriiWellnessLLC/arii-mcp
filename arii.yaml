@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "8.0.0"
+  version: "9.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -978,8 +978,12 @@ paths:
       parameters:
         - name: UserId
           in: query
+          required: true
           description: |
-            Filter by Arii user ID. Do not pass an Airia profile ID.
+            Whose record to read: the person's Arii user ID. Do not pass an Airia profile ID.
+            Always send it, also for the signed-in person's own record: without it the API
+            reads the caller's own record, so a clinician asking about a patient would get
+            their own observations back.
           schema:
             type: string
             format: uuid
@@ -1961,12 +1965,15 @@ paths:
 
         **Paged with a cursor.** Readings come by marker, then date newest first, then the
         preferred source first, then source name, then time newest first. `limit` is the page
-        size: 500 when missing, 0 or negative, and never more than 500. When `nextCursor` is
-        not null, call again with the same parameters plus `cursor=<nextCursor>`, and keep
-        going until `nextCursor` is null. A page can hold fewer readings than `limit` — even
-        none — and still have a `nextCursor`: a filtered read stops after looking at 5,000
-        readings and continues on the next page. If you stop before `nextCursor` is null, say
-        the answer is partial. For "how many", call `get_marker_samples_compact_count` with
+        size: 500 when missing, 0 or negative, and never more than 500. A full page of 500
+        readings is a large reply: when a read spans many markers or many sources, send
+        `limit=100` and follow more, smaller pages. When `nextCursor` is not null, call again
+        with exactly the same parameters (the same `specificMarkers`, `takePerSource`, `limit`
+        and dates) plus `cursor=<nextCursor>`, and keep going until `nextCursor` is null.
+        Never send a cursor a reply did not give you. A page can hold fewer readings than
+        `limit` — even none — and still have a `nextCursor`: a filtered read stops after
+        looking at 5,000 readings and continues on the next page. If you stop before
+        `nextCursor` is null, say the answer is partial. For "how many", call `get_marker_samples_compact_count` with
         the same filters instead of paging and counting.
 
         `specificMarkers` is required, 1–20 ids. `recordStartDate` and `recordEndDate` are
@@ -1997,7 +2004,11 @@ paths:
         - name: specificMarkers
           in: query
           required: true
-          description: 1–20 marker type IDs from `get_user_marker_types_with_data`. Markers outside your access to this person are returned in `withheldIds`.
+          description: |
+            1–20 marker type IDs from `get_user_marker_types_with_data`, each copied exactly as
+            listed. Markers outside your access to this person are returned in `withheldIds`.
+            To read more than 20, split the list into groups of up to 20 and count each group:
+            an id left out of every group is never read.
           schema:
             type: array
             minItems: 1
@@ -2055,7 +2066,7 @@ paths:
             type: string
         - name: limit
           in: query
-          description: Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500.
+          description: Readings per page. Missing, 0 or negative means 500; more than 500 is cut down to 500. Send 100 when the read spans many markers or many sources.
           schema:
             type: integer
             default: 500
@@ -2415,8 +2426,11 @@ paths:
         `get_observation_samples` for whether a result is normal for this person.
 
         **`tags=labresult` lists only the patient's lab markers.** To read every lab a patient
-        has, call this with `tags=labresult`, then read the ids in groups of up to 20 with
-        `get_marker_samples_compact`, following `nextCursor` on each.
+        has, call this with `tags=labresult`, then split the ids, in the order this call
+        returned them, into groups of up to 20: group 1 is ids 1–20, group 2 ids 21–40, and
+        so on, every id in exactly one group. Read every group with
+        `get_marker_samples_compact`; the groups do not depend on each other, so their first
+        calls can go together. Follow each group's `nextCursor` until it is null.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
