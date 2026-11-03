@@ -6,20 +6,21 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
-## 9.0.0 — unreleased
+## 10.0.0 — unreleased
 
-A breaking release: the `get_marker_samples_compact` response changes shape and `list_observations` requires `UserId` (see Breaking changes).
+A breaking release: the `get_marker_samples_compact` response changes shape (see Breaking changes).
 
-Why 9.0.0 and not 8.0.0: arii-agents main already pins an 8.0.0 that described a labs-only read arii-api never released. This version replaces it, so it needs a higher number in both copies.
+Why 10.0.0: arii-agents main pinned an 8.0.0, which described a labs-only read arii-api never released, and then a 9.0.0 of this release before it was finished. Since that 9.0.0 the `get_marker_samples_compact` reading changed shape again (`outOfRangeComponent` was added), which is a major change, so this release needs a number above both pinned copies.
 
 Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://nicoya.atlassian.net/browse/AIP-539).
 
 ### Added
 
 - `get_observation_samples` accepts optional `observationId` and repeated `markerTypeIds` query parameters. Agents can read one observation, selected markers, or selected markers in one observation. (#10)
-- `get_marker_samples_compact_count` counts the readings `get_marker_samples_compact` returns over all its pages, with the same parameters. The count stops at 1,000: past it `count` is 1,000 and `countCapped` is true. New response schema `MarkerSamplesCompactCount`. (AIP-539)
+- `get_marker_samples_compact_count` counts the readings `get_marker_samples_compact` returns over all its pages, with the same parameters. When `countCapped` is true the count stopped early, at 1,000 matches or, for a count with `select`, `valueAbove` or `valueBelow`, after judging 5,000 readings, so `count` can be well under 1,000. The description says to report "at least N", N being `count`, and to count again over a narrower window when the exact number matters. New response schema `MarkerSamplesCompactCount`. (AIP-539)
 - `get_marker_samples_compact` pages with a cursor: new `cursor` and `limit` parameters (`limit` is 500 when missing, 0 or negative, and at most 500) and a `nextCursor` in the response, null on the last page. A page can be shorter than `limit` and still have a `nextCursor`. A bad cursor, or one sent with different parameters, is a 400 with a plain-text message. (AIP-539)
 - `get_marker_samples_compact` readings carry `appliedReferenceRange`, `appliedRangeStatus` and `appliedOutOfRange`: the range that applies to the patient and the reading judged against it. (AIP-366, AIP-539)
+- `get_marker_samples_compact` readings with two values, such as blood pressure, carry `outOfRangeComponent`: `First`, `Second` or `Both`, naming which value is out of range. Absent on a one-value reading and when neither value is out of range. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 - `get_user_marker_types_with_data` takes repeated `tags`, matching any of them, trimmed and ignoring case; `tags=labresult` lists the patient's lab markers. Every tag blank is a 400. (AIP-539)
 
 ### Changed
@@ -30,6 +31,9 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://
 - `get_marker_samples_compact` `rangeStatus` is `L`, `H` or `InRange` (null when not judged), read with the bands for the patient's sex, instead of the band's label. Readings are judged in the unit they are stored in, as `get_marker_summary_compact` judges them. (AIP-539)
 - `get_marker_samples_compact` `select=OutOfRange` judges a reading by its printed range when it has one, else by the range that applies to the patient, and counts borderline readings as out of range, so it can return more readings than before. (AIP-366, AIP-539)
 - The general pagination guidance describes the cursor read. (AIP-539)
+- `get_marker_samples_compact` `outOfRange` says that false also means the reading has no printed range that can judge it, and points to `appliedOutOfRange`. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `list_observations` `UserId` says what happens when it is left out: the API reads the caller's own record, so a pre-visit brief for a patient showed the clinician's 21 workouts (AIP139, 2026-10-30). The description says to send it on every patient read. It stays optional, as it is on the API. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- `get_shared_notes` `userId` says the API reads the caller's own shared notes when it is left out. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 
 ### Removed
 
@@ -37,7 +41,6 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://
 
 ### Breaking changes
 
-- `list_observations` requires `UserId`. Without it the API read the caller's own record: a pre-visit brief for a patient showed the clinician's 21 workouts (AIP139, 2026-10-30). A caller reading its own record now sends its own id. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 - `get_marker_samples_compact` response changes shape: it adds `nextCursor`, so one call no longer returns every reading up to 500 — a caller has to follow `nextCursor` until it is null. `truncated` now means only "there is another page" and is deprecated. On each reading, `rangeStatus` changes from the band's label to `L`, `H` or `InRange`. (AIP-539)
 
 ## 3.1.0 — week of Oct 5–11, 2026 (released Oct 8)

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "9.0.0"
+  version: "10.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -874,7 +874,7 @@ paths:
           in: query
           description: |
             Arii user ID (`UserDto.id` GUID) whose shared notes to fetch — not an Airia
-            profile ID.
+            profile ID. Left out, the API reads the caller's own shared notes.
           schema:
             type: string
             format: uuid
@@ -984,12 +984,10 @@ paths:
       parameters:
         - name: UserId
           in: query
-          required: true
           description: |
             Whose record to read: the person's Arii user ID. Do not pass an Airia profile ID.
-            Always send it, also for the signed-in person's own record: without it the API
-            reads the caller's own record, so a clinician asking about a patient would get
-            their own observations back.
+            Left out, the API reads the caller's own record, so a clinician asking about a
+            patient gets their own observations back. Send it on every patient read.
           schema:
             type: string
             format: uuid
@@ -2115,8 +2113,10 @@ paths:
         "how many": "how many glucose readings above 180 this month", "how many days did she
         log her blood pressure". Never page and count the rows yourself.
 
-        **The count stops at 1,000.** When more than 1,000 readings match, `count` is 1,000
-        and `countCapped` is true: say "more than 1,000", never the exact number.
+        **When `countCapped` is true, say "at least N", where N is `count`.** The count
+        stopped early: at 1,000 matches, or, for a count with `select`, `valueAbove` or
+        `valueBelow`, after judging 5,000 readings. So a capped `count` can be well under
+        1,000. When the exact number matters, count again over a narrower window.
 
         The same checks and errors as `get_marker_samples_compact`, and the same
         `unmatchedIds` and `withheldIds`. A count with `select`, `valueAbove` or `valueBelow`
@@ -2192,7 +2192,7 @@ paths:
               $ref: "#/components/schemas/HealthDataSourceName"
       responses:
         "200":
-          description: The number of readings, up to 1,000
+          description: The number of readings, up to 1,000. When countCapped is true, say "at least" that number
           content:
             application/json:
               schema:
@@ -3604,7 +3604,22 @@ components:
             carries no range that can judge it — never read null as normal.
         outOfRange:
           type: boolean
-          description: True when the reading is outside its printed range, borderline or further.
+          description: >-
+            True when the reading is outside its printed range, borderline or further. False
+            also means the reading has no printed range that can judge it — never read false
+            alone as normal. For such a reading look at `appliedOutOfRange`, the verdict
+            against the range that applies to the patient; `select=OutOfRange` uses that
+            verdict for it.
+        outOfRangeComponent:
+          type: string
+          enum: [First, Second, Both]
+          description: >-
+            For a reading with two values, which one is out of range: `First` is `value`,
+            `Second` is `secondValue`, `Both` is both. On blood pressure `value` is systolic
+            and `secondValue` diastolic, so `Second` means only the diastolic is out of range.
+            Judged against the printed range when the reading has one that can judge it,
+            else against the applied range. Absent on a one-value reading, when neither
+            value is out of range, and when the reading was not judged.
         appliedReferenceRange:
           allOf:
             - $ref: "#/components/schemas/AppliedReferenceRange"
@@ -3664,10 +3679,17 @@ components:
       properties:
         count:
           type: integer
-          description: The number of readings, at most 1,000.
+          description: >-
+            The number of readings, at most 1,000. When `countCapped` is true it is a lower
+            bound: say "at least" this number.
         countCapped:
           type: boolean
-          description: True when more than 1,000 readings matched; `count` is then 1,000. Say "more than 1,000".
+          description: >-
+            True when the count stopped early: at 1,000 matches, or, for a count with
+            `select`, `valueAbove` or `valueBelow`, after judging 5,000 readings. `count` is
+            then the matches found so far, which can be well under 1,000. Say "at least N",
+            where N is `count`. When the exact number matters, count again over a narrower
+            window.
         unmatchedIds:
           type: array
           nullable: true
