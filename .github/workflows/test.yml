@@ -1,0 +1,42 @@
+name: "Lint and test"
+
+# Lints arii.yaml and runs the contract tests in tests/ against a JSON bundle of it.
+# The same commands are in the README's Validation section.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test the spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Lint arii.yaml
+        run: npx -y @redocly/cli@2.72.1 lint arii.yaml
+
+      # The tests read the bundle, where every $ref inside a file is resolved.
+      - name: Bundle arii.yaml
+        run: npx -y @redocly/cli@2.72.1 bundle arii.yaml --output "$RUNNER_TEMP/arii-contract.json"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Run the contract tests
+        env:
+          ARII_OPENAPI_BUNDLE: ${{ runner.temp }}/arii-contract.json
+        run: python -B -m unittest discover -s tests -v
