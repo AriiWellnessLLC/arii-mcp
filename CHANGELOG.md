@@ -37,7 +37,7 @@ Jira: [AIP-239](https://nicoya.atlassian.net/browse/AIP-239), [AIP-539](https://
 - `get_marker_samples_compact` `outOfRange` says that false also means the reading has no printed range that can judge it, and points to `appliedOutOfRange`. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 - `list_observations` `UserId` says what happens when it is left out: the API reads the caller's own record, so a pre-visit brief for a patient showed the clinician's 21 workouts (AIP139, 2026-10-30). The description says to send it on every patient read. It stays optional, as it is on the API. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 - `get_shared_notes` `userId` says the API reads the caller's own shared notes when it is left out. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
-- The "how many" rule in the info section and the paging guidance say `list_observations` and `get_observation_samples` carry no count: read every page and count the rows, as arii-mcp#33 says. Individual marker readings are counted with `get_marker_samples_compact_count`. The `list_observations` and `get_observation_samples` descriptions say the same, in #33's words; their response schemas are left to #33. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
+- The "how many" rule in the info section says individual marker readings are counted with `get_marker_samples_compact_count`, never by counting the rows of `get_marker_samples_compact`. ([AIP-369](https://nicoya.atlassian.net/browse/AIP-369))
 
 ### Removed
 

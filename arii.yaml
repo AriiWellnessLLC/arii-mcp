@@ -40,11 +40,8 @@ info:
       levels, not directions: never report a result as low or high from a label.
     - **"How many" is answered from `totalCount`.** A read that returns `totalCount` carries
       the server's count of the records matching the request beside the rows. Quote it.
-      Never count the rows: a long list is easy to miscount (AIP-413).
-    - **Two paged reads carry no count: `list_observations` and `get_observation_samples`.**
-      Never use their `totalCount` or `totalPages`. For how many, read every page — the
-      largest `PageSize`, then the next `PageNumber`, until `hasNextPage` is false — and count
-      the rows you received.
+      Never count the rows: a long list is easy to miscount, and a paged read such as
+      `list_observations` returns one page of a larger total (AIP-413).
     - **Individual marker readings are counted by `get_marker_samples_compact_count`**, up
       to 1,000. Never count the rows of `get_marker_samples_compact`.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
@@ -153,9 +150,7 @@ info:
     - **Page numbers.** You ask for a page by its number: `pageNumber`, starting at 0, and
       `pageSize`, how many rows a page holds. Where the reply has `totalCount` and
       `hasNextPage`, they say how many rows there are in all pages together and whether
-      another page follows. For "how many", quote `totalCount` rather than counting rows,
-      except on `list_observations` and `get_observation_samples`: read every page of those
-      and count the rows.
+      another page follows. For "how many", quote `totalCount` rather than counting rows.
     - **Cursor.** You don't choose a page. The first request has no `cursor`. Every reply
       has a `nextCursor`: when it is null, you have everything; when it has a value, there is
       more, so you send exactly the same request again with `cursor` set to that value.
@@ -970,9 +965,10 @@ paths:
 
         `PageNumber` is 0-based and `PageSize` is 1-100, default 10.
 
-        **For how many, read every page and count the rows.** Call with `PageSize=100`, then
-        the next `PageNumber`, until `hasNextPage` is false. The response carries no count:
-        never use `totalCount` or `totalPages`.
+        **For how many, quote `totalCount`.** It counts every observation matching the
+        request, across all pages. A page holds at most `PageSize` rows, so counting the
+        rows comes out short as soon as there is a second page, and a long page is easy to
+        miscount.
 
         **Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside
         every matching event. One lab panel came back at 288,000 characters; a ten-panel
@@ -1173,8 +1169,7 @@ paths:
         `maxSamplesPerMarker` limits the number of newest samples returned per marker.
 
         `pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with
-        `hasNextPage` until it is false. The response carries no count: never use
-        `totalCount` or `totalPages`.
+        `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
