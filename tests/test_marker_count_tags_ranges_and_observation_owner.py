@@ -117,6 +117,47 @@ class ObservationListOwnerTest(unittest.TestCase):
         self.assertIn("Send it on every patient read.", parameter["description"])
 
 
+def words(text):
+    """The text with every run of spaces and line breaks made one space, so a re-wrapped line still matches."""
+    return " ".join(text.split())
+
+
+class ObservationCountTest(unittest.TestCase):
+    """list_observations and get_observation_samples return totalCount and totalPages, but neither is a
+    count of the rows the person has. An agent that quoted them gave wrong workout and appointment
+    counts, so the spec tells it to read every page and count the rows, in the general rules and on
+    both tools."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spec = load_spec()
+
+    def test_the_general_rules_say_the_two_reads_carry_no_count(self):
+        info = words(self.spec["info"]["description"])
+        self.assertIn("Two paged reads carry no count: `list_observations` and `get_observation_samples`.** "
+                      "Never use their `totalCount` or `totalPages`. For how many, read every page — the largest "
+                      "`PageSize`, then the next `PageNumber`, until `hasNextPage` is false — and count the rows "
+                      "you received.", info)
+        self.assertIn("For \"how many\", quote `totalCount` rather than counting rows, except on `list_observations` "
+                      "and `get_observation_samples`: read every page of those and count the rows.", info)
+
+    def test_each_of_the_two_reads_says_it_carries_no_count(self):
+        for operation_id in ("list_observations", "get_observation_samples"):
+            with self.subTest(operation=operation_id):
+                description = words(find_operation(self.spec, operation_id)["description"])
+                self.assertIn("The response carries no count: never use `totalCount` or `totalPages`.", description)
+                self.assertIn("`hasNextPage`", description)
+
+
+class SharedNotesOwnerTest(unittest.TestCase):
+    def test_the_user_id_is_optional_and_says_it_falls_back_to_the_caller(self):
+        # Like list_observations: arii-api reads the caller's own shared notes when userId is missing.
+        parameter = named_parameters(find_operation(load_spec(), "get_shared_notes"))["userId"]
+        self.assertEqual(parameter["in"], "query")
+        self.assertFalse(parameter.get("required", False))
+        self.assertIn("Left out, the API reads the caller's own shared notes.", words(parameter["description"]))
+
+
 class MarkerSampleRangesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
