@@ -40,9 +40,13 @@ info:
       levels, not directions: never report a result as low or high from a label.
     - **"How many" is answered from `totalCount`.** A read that returns `totalCount` carries
       the server's count of the records matching the request beside the rows. Quote it.
-      Never count the rows: a long list is easy to miscount, and a paged read such as
-      `list_observations` returns one page of a larger total (AIP-413). For individual
-      marker readings, `get_marker_samples_compact_count` gives the number, up to 1,000.
+      Never count the rows: a long list is easy to miscount (AIP-413).
+    - **Two paged reads carry no count: `list_observations` and `get_observation_samples`.**
+      Never use their `totalCount` or `totalPages`. For how many, read every page — the
+      largest `PageSize`, then the next `PageNumber`, until `hasNextPage` is false — and count
+      the rows you received.
+    - **Individual marker readings are counted by `get_marker_samples_compact_count`**, up
+      to 1,000. Never count the rows of `get_marker_samples_compact`.
     - "Is this normal for this person?": for one named result, `get_observation_samples`,
       which carries `appliedReferenceRange` — patient-specific, sex-filtered, converted to
       the sample's unit. Across the whole chart, `get_marker_summary_compact` with
@@ -149,7 +153,9 @@ info:
     - **Page numbers.** You ask for a page by its number: `pageNumber`, starting at 0, and
       `pageSize`, how many rows a page holds. Where the reply has `totalCount` and
       `hasNextPage`, they say how many rows there are in all pages together and whether
-      another page follows. For "how many", quote `totalCount` rather than counting rows.
+      another page follows. For "how many", quote `totalCount` rather than counting rows,
+      except on `list_observations` and `get_observation_samples`: read every page of those
+      and count the rows.
     - **Cursor.** You don't choose a page. The first request has no `cursor`. Every reply
       has a `nextCursor`: when it is null, you have everything; when it has a value, there is
       more, so you send exactly the same request again with `cursor` set to that value.
@@ -964,10 +970,9 @@ paths:
 
         `PageNumber` is 0-based and `PageSize` is 1-100, default 10.
 
-        **For how many, quote `totalCount`.** It counts every observation matching the
-        request, across all pages. A page holds at most `PageSize` rows, so counting the
-        rows comes out short as soon as there is a second page, and a long page is easy to
-        miscount.
+        **For how many, read every page and count the rows.** Call with `PageSize=100`, then
+        the next `PageNumber`, until `hasNextPage` is false. The response carries no count:
+        never use `totalCount` or `totalPages`.
 
         **Never set `IncludeHealthKitSamples=true`.** It returns every measurement inside
         every matching event. One lab panel came back at 288,000 characters; a ten-panel
@@ -1168,7 +1173,8 @@ paths:
         `maxSamplesPerMarker` limits the number of newest samples returned per marker.
 
         `pageNumber` is 0-based and `pageSize` is 1-100, default 100. Page with
-        `hasNextPage`; `totalCount` and `totalPages` come back on the same response.
+        `hasNextPage` until it is false. The response carries no count: never use
+        `totalCount` or `totalPages`.
 
         If this read fails, say you could not retrieve the data. A failure is never
         evidence that the person has none.
@@ -2078,7 +2084,6 @@ paths:
           description: How many readings one page holds, never more than 500 (left out, 0 or negative means 500). Send 100 unless the request asks for a particular page size.
           schema:
             type: integer
-            default: 500
             maximum: 500
       responses:
         "200":
@@ -2439,8 +2444,11 @@ paths:
         **Reading all of a patient's labs.** Call this with `tags=labresult` to get the
         list of lab ids. Then read them with `get_marker_samples_compact` in groups of up to
         20, in the order this list gives them: ids 1–20, then 21–40, and so on, so every id
-        is in exactly one group. The groups don't depend on each other, so you can ask for
-        their first pages together. Then follow each group's `nextCursor` until it is null.
+        is in exactly one group. The groups don't depend on each other, so you can read a few
+        at a time, never more than 4 calls at once. Send the date window the question needs
+        (`recordStartDate` and `recordEndDate`). When only the latest result matters, send
+        `latestPerSource=true` instead, or `takePerSource` for the newest few. Then follow
+        each group's `nextCursor` until it is null.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -3796,7 +3804,22 @@ components:
         segments:
           type: array
           nullable: true
-          description: The range's bands, already filtered to the patient's sex.
+          description: >-
+            The range's bands, already filtered to the patient's sex. The first value is
+            judged against these. For a two-value reading, the second value is judged against
+            `secondValueSegments` when it is present.
+          items:
+            $ref: "#/components/schemas/ReferenceRangeSegment"
+        secondValueSegments:
+          type: array
+          nullable: true
+          description: >-
+            The bands for the second value of a two-value reading, filtered to the patient's
+            sex. On blood pressure that is the diastolic. The second value is judged against
+            these, not against `segments`, so `outOfRangeComponent` `Second` refers to these
+            bands. Null or absent when the range has no separate bands for the second value;
+            then the second value is judged against `segments`. An empty list means none of
+            these bands apply to the patient's sex, and the second value is not judged.
           items:
             $ref: "#/components/schemas/ReferenceRangeSegment"
 
