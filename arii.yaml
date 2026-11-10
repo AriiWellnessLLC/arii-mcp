@@ -1965,8 +1965,11 @@ paths:
         carries one; quote it as the report's range), `rangeStatus` and `outOfRange` (the
         reading judged against that printed range, using the bands for the patient's sex),
         and, when a range applies to the patient, `appliedReferenceRange`,
-        `appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it
-        is stored in, the same way `get_marker_summary_compact` judges it.
+        `appliedRangeStatus` and `appliedOutOfRange`. When `appliedOutOfRange` is true the
+        reading also has `appliedRangeSeverity`: `Borderline` (in a graded band next to the
+        normal band) or `OutOfRange` (beyond the graded bands). Take that verdict from the
+        field, never from a band label. Every reading is judged in the unit it is stored in,
+        the same way `get_marker_summary_compact` judges it.
 
         **Pages and cursors.** This read is paged with a cursor. Readings come back by
         marker, newest first, the preferred source first. `limit` sets how many readings a
