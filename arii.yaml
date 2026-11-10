@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "10.0.0"
+  version: "11.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -3639,6 +3639,17 @@ components:
           type: boolean
           nullable: true
           description: True when the reading is outside the applied range, borderline or further. Absent when it was not judged.
+        appliedRangeSeverity:
+          type: string
+          enum: [Borderline, OutOfRange]
+          description: >-
+            How far outside the applied range the reading is. Present only when
+            `appliedOutOfRange` is true; absent otherwise. `Borderline` means the reading is in
+            a graded band next to the normal band, for example LDL 100–130 "Moderate" when
+            under 100 is normal. `OutOfRange` means it is beyond the graded bands. The
+            direction comes from `appliedRangeStatus` (L or H). Take the verdict from this
+            field. Never work it out from the band labels in `appliedReferenceRange`: a label
+            is not a verdict.
 
     MarkerSamplesCompactResult:
       type: object

@@ -6,6 +6,28 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 11.0.0 — unreleased
+
+Why 11.0.0: 10.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. The version check counts any change to a response's shape as a major change.
+
+Jira: [AIP-601](https://nicoya.atlassian.net/browse/AIP-601).
+
+### Added
+
+- `get_marker_samples_compact` readings carry `appliedRangeSeverity`: `Borderline` or `OutOfRange`, present only when `appliedOutOfRange` is true. `Borderline` means the reading is in a graded band next to the normal band of the applied range, such as LDL 100–130 when under 100 is normal. `OutOfRange` means it is beyond the graded bands. The description says to take the verdict from this field, never from the band labels. ([AIP-601](https://nicoya.atlassian.net/browse/AIP-601))
+
+### Changed
+
+- None.
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None. The new field is optional, so every call that worked before still works.
+
 ## 10.0.0 — unreleased
 
 A breaking release: the `get_marker_samples_compact` response changes shape (see Breaking changes).
