@@ -6,6 +6,29 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 12.0.0 — unreleased
+
+Why 12.0.0: 11.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. arii-agents' `mcp/version.mjs` counts any change to a response's shape as major, even an added optional field. So the version is major although nothing breaks.
+
+Jira: [AIP-601](https://nicoya.atlassian.net/browse/AIP-601).
+
+### Added
+
+- `get_marker_samples_compact` readings carry `rangeSeverity`: `Borderline` or `OutOfRange`, present only when `outOfRange` is true. It is the printed range's (`referenceRange`) counterpart of `appliedRangeSeverity`. A printed range without graded bands gives only `OutOfRange`. Before this, a reading out of range by its printed range carried no severity, so an agent could not tell a borderline lab result from one far out. ([AIP-601](https://nicoya.atlassian.net/browse/AIP-601))
+
+### Changed
+
+- `get_marker_samples_compact` and `get_marker_samples_compact_count` `select=OutOfRange` say on the tool and on the parameter that borderline readings are included, and that a reading is judged by its printed range when it has one, else by the range that applies to the patient. `rangeSeverity` and `appliedRangeSeverity` tell borderline from further out. ([AIP-601](https://nicoya.atlassian.net/browse/AIP-601))
+- `get_marker_samples_compact` and `appliedRangeSeverity` name `rangeSeverity` among the fields that judge the printed range, so the two severities are not read as one. ([AIP-601](https://nicoya.atlassian.net/browse/AIP-601))
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None. The new field is optional, so every call that worked before still works. The major version comes from the version rule above, not from a break.
+
 ## 11.0.0 — unreleased
 
 Why 11.0.0: 10.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. arii-agents' `mcp/version.mjs` counts any change to a response's shape as major, even an added optional field. So the version is major although nothing breaks.

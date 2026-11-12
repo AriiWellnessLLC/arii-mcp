@@ -173,6 +173,29 @@ class MarkerSampleRangesTest(unittest.TestCase):
         self.assertIn("On blood pressure `value` is systolic", field["description"])
         self.assertIn("Absent on a one-value reading", field["description"])
 
+    def test_a_printed_range_verdict_carries_its_own_severity(self):
+        # MarkerSampleCompactDto.RangeSeverity is a string enum, not written when null, set only
+        # when outOfRange is true. Without it a reading out of range by its printed range said
+        # nothing about how far out it was.
+        field = self.properties["rangeSeverity"]
+        self.assertEqual(field["type"], "string")
+        self.assertEqual(field["enum"], ["Borderline", "OutOfRange"])
+        self.assertNotIn("nullable", field)
+        self.assertIn("Set only when `outOfRange` is true", words(field["description"]))
+        self.assertIn("read `appliedRangeSeverity`", words(field["description"]))
+        self.assertIn("`rangeStatus`, `outOfRange` and `rangeSeverity` judge the printed range", words(self.description))
+
+    def test_select_out_of_range_says_borderline_readings_are_included(self):
+        spec = load_spec()
+        for tool in ("get_marker_samples_compact", "get_marker_samples_compact_count"):
+            with self.subTest(tool=tool):
+                select = words(named_parameters(find_operation(spec, tool))["select"]["description"])
+                self.assertIn("borderline ones included", select)
+                self.assertIn("printed range", select)
+        read = words(named_parameters(find_operation(spec, "get_marker_samples_compact"))["select"]["description"])
+        self.assertIn("`rangeSeverity` (printed range) and `appliedRangeSeverity` (applied range)", read)
+        self.assertIn("Borderline readings are included", words(self.description))
+
 
 if __name__ == "__main__":
     unittest.main()
