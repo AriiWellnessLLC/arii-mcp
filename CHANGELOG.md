@@ -8,7 +8,7 @@ Write the entry in the same PR that raises the version. List the tools added, ch
 
 ## 11.0.0 — unreleased
 
-Why 11.0.0: 10.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. The version check counts any change to a response's shape as a major change.
+Why 11.0.0: 10.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. arii-agents' `mcp/version.mjs` counts any change to a response's shape as major, even an added optional field. So the version is major although nothing breaks.
 
 Jira: [AIP-601](https://nicoya.atlassian.net/browse/AIP-601).
 
@@ -26,7 +26,7 @@ Jira: [AIP-601](https://nicoya.atlassian.net/browse/AIP-601).
 
 ### Breaking changes
 
-- None. The new field is optional, so every call that worked before still works.
+- None. The new field is optional, so every call that worked before still works. The major version comes from the version rule above, not from a break.
 
 ## 10.0.0 — unreleased
 
