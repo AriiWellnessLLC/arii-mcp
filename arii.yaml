@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "10.0.0"
+  version: "11.0.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -1953,7 +1953,11 @@ paths:
           with the year's dates.
         - `select=OutOfRange` — only readings outside their range: the range printed with
           the reading when it has one, else the range that applies to the patient, as
-          `get_marker_summary_compact` judges. Borderline readings count as out of range.
+          `get_marker_summary_compact` judges. Borderline readings are included: a reading
+          just outside the normal band is selected as well as one far outside it.
+          `appliedRangeSeverity` tells them apart (`Borderline` or `OutOfRange`) when the
+          applied range judged the reading. A reading picked by its printed range may have
+          no applied severity.
         - `valueAbove=X` / `valueBelow=X` — "days her blood pressure was over 140", in the
           reading's unit.
         - `dataSources` — read only these sources.
@@ -1965,8 +1969,13 @@ paths:
         carries one; quote it as the report's range), `rangeStatus` and `outOfRange` (the
         reading judged against that printed range, using the bands for the patient's sex),
         and, when a range applies to the patient, `appliedReferenceRange`,
-        `appliedRangeStatus` and `appliedOutOfRange`. Every reading is judged in the unit it
-        is stored in, the same way `get_marker_summary_compact` judges it.
+        `appliedRangeStatus` and `appliedOutOfRange`. When `appliedOutOfRange` is true the
+        reading also has `appliedRangeSeverity`: `Borderline` (in a graded band next to the
+        normal band) or `OutOfRange` (beyond the graded bands). It judges only the applied
+        range; `rangeStatus` and `outOfRange` judge the printed range. On a two-value reading
+        it is the worse of the two values. Take that verdict from the field, never from a
+        band label. Every reading is judged in the unit it is stored in,
+        the same way `get_marker_summary_compact` judges it.
 
         **Pages and cursors.** This read is paged with a cursor. Readings come back by
         marker, newest first, the preferred source first. `limit` sets how many readings a
@@ -2040,7 +2049,7 @@ paths:
             maximum: 100
         - name: select
           in: query
-          description: "`All` (default) or `OutOfRange`: only readings outside their reference range."
+          description: "`All` (default) or `OutOfRange`: only readings outside their reference range. Borderline readings are included. `appliedRangeSeverity` tells borderline from further out when the applied range judged the reading; a reading picked by its printed range may have none."
           schema:
             type: string
             enum: [All, OutOfRange]
@@ -3639,6 +3648,19 @@ components:
           type: boolean
           nullable: true
           description: True when the reading is outside the applied range, borderline or further. Absent when it was not judged.
+        appliedRangeSeverity:
+          type: string
+          enum: [Borderline, OutOfRange]
+          description: >-
+            How far outside the applied range the reading is. Present only when
+            `appliedOutOfRange` is true; absent otherwise. `Borderline` means the reading is in
+            a graded band next to the normal band, for example LDL 100–130 "Moderate" when
+            under 100 is normal. `OutOfRange` means it is beyond the graded bands. The
+            direction comes from `appliedRangeStatus` (L or H). Take the verdict from this
+            field. Never work it out from the band labels in `appliedReferenceRange`: a label
+            is not a verdict. It judges only the applied range; `rangeStatus` and `outOfRange`
+            judge the printed range, and carry no severity. On a reading with two values, such
+            as blood pressure, it is the worse of the two values.
 
     MarkerSamplesCompactResult:
       type: object

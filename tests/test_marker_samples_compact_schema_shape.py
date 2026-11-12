@@ -119,6 +119,14 @@ class MarkerSamplesCompactShapeTest(unittest.TestCase):
         component = reading["properties"]["outOfRangeComponent"]
         self.assertEqual(["First", "Second", "Both"], component["enum"])
 
+    def test_applied_range_severity_is_an_optional_borderline_or_out_of_range(self):
+        result = response_schema(self.spec, self.samples)
+        reading = item_schema(self.spec, result["properties"]["items"])
+        severity = reading["properties"]["appliedRangeSeverity"]
+        self.assertEqual("string", severity["type"])
+        self.assertEqual(["Borderline", "OutOfRange"], severity["enum"])
+        self.assertNotIn("appliedRangeSeverity", reading.get("required", []))
+
 
 if __name__ == "__main__":
     unittest.main()
