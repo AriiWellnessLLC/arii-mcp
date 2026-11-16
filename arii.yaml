@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "12.0.0"
+  version: "12.1.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -65,6 +65,9 @@ info:
       (patients).
     - Profile facts (date of birth, sex, timezone, allergies): `get_user_preferences`.
       They are not on `get_user`.
+    - Program enrolments ("which program is she on", "is she keeping up with her tasks"):
+      `get_program_progress` for the patient. Copy its week and task counts; never
+      recompute them.
 
     **This surface is read-only.** No `create_*` tool is exposed. The app writes the
     record when the person approves a card in the client; an agent writing directly
@@ -208,6 +211,8 @@ tags:
     description: Marker type (biomarker/metric) definitions and lookup
   - name: DataDictionary
     description: Per-user data dictionary (which marker types a user has data for)
+  - name: Programs
+    description: A patient's active program enrolments and their progress, counted by the server
 
 paths:
   # ===================
@@ -2555,6 +2560,81 @@ paths:
         "403":
           description: Requester is not permitted to read this user's data dictionary
 
+  # ===================
+  # PROGRAM ENDPOINTS
+  # ===================
+  /api/v2/programs/enrollments/progress:
+    get:
+      tags: [Programs]
+      operationId: get_program_progress
+      summary: Get one patient's progress in their active programs
+      description: |
+        Returns the programs one patient is enrolled in now, with how far along they are:
+        the program's name, its start and end dates, its length in weeks, the current week,
+        and how many tasks are done out of those due.
+
+        Use for "which program is she on", "how far into it is he", or "is she keeping up
+        with her program tasks".
+
+        **Only Active enrolments are returned.** This read cannot answer questions about
+        past programs. Newest start first.
+
+        Pass the patient's Arii user ID as `userId`, from the execution context. It is
+        required: the read covers exactly that one patient.
+
+        **An empty list means the patient is not enrolled in any active program.** Say so.
+        Do not report it as missing data.
+
+        **The numbers are computed by the server. Copy them; never recompute them.**
+        `tasksDue` counts the Required tasks due on or before the patient's today, Skipped
+        tasks left out. `tasksDone` counts those of them that are completed. Tasks due
+        later are in neither number. `currentWeek` and `hasStarted` are judged on the
+        patient's local day. Counting tasks or weeks yourself from dates gives a different
+        answer from the app.
+
+        - `hasStarted` false: the program starts on `startDate`; `currentWeek` is null.
+        - `currentWeek` null after the start: the program ended on `lastDay` and is still
+          active. On `lastDay` itself `currentWeek` is still set.
+        - `totalWeeks` and `endDate` null: the program has no phases, so no length in weeks.
+          Its `lastDay` is then the due day of its last scheduled task.
+        - `lastDay` null: the program has neither phases nor scheduled tasks, so no end.
+        - `tasksDue` 0: no task is due yet, so there is nothing to report on tasks.
+
+        Returns a plain list, not a page. A 403 is an access problem, never evidence that
+        the patient has no programs. If this read fails, say you could not retrieve program
+        progress.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: |
+            Arii user ID (`UserDto.id` GUID) of the patient whose programs to read — the
+            subject of the read, from execution context. Never the requester's own id on a
+            clinician turn, and never an Airia profile ID, Keycloak `sub`, or group ID.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The patient's active program enrolments, newest start first; empty when none
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProgramProgressDto"
+        "400":
+          description: "`userId` is missing or not a GUID"
+        "401":
+          description: Missing or invalid credentials
+        "403":
+          description: |
+            Requester is not the patient, not a provider in the patient's group, and not an
+            admin
+
 components:
   parameters:
     # Canonical Arii user-ID parameters. Kept here so the ID-kind guidance has a
@@ -4048,6 +4128,66 @@ components:
           type: number
           nullable: true
           description: Similarity of the passage to the query; higher is closer.
+
+    ProgramProgressDto:
+      type: object
+      description: |
+        One active program enrolment and the patient's progress in it, from
+        `get_program_progress`. Every number is computed by the server: copy it, never
+        recompute it.
+      properties:
+        enrollmentId:
+          type: string
+          format: uuid
+          description: The enrolment's ID.
+        name:
+          type: string
+          description: The program's name, as it was when the patient was enrolled.
+        startDate:
+          type: string
+          format: date
+          description: The day the enrolment starts, `YYYY-MM-DD`.
+        endDate:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            The last day of the program's last phase, `YYYY-MM-DD`. The program has ended
+            from the day after. Null when the program has no phases, so no set length.
+        hasStarted:
+          type: boolean
+          description: False when `startDate` is after the patient's today.
+        lastDay:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            The program's last day, `YYYY-MM-DD`: `endDate` when the program has phases,
+            otherwise the due day of its last scheduled task. The program has ended from
+            the day after. Null when there is neither.
+        totalWeeks:
+          type: integer
+          nullable: true
+          description: |
+            The program's length in weeks, from `startDate` to `endDate` counting both days,
+            rounded up to a whole week. Null when `endDate` is null.
+        currentWeek:
+          type: integer
+          nullable: true
+          description: |
+            The week the patient's today falls in, counting from 1 at `startDate`. On
+            `lastDay` it is still the current week. Null before the start and after
+            `lastDay`.
+        tasksDone:
+          type: integer
+          description: |
+            Required tasks due on or before the patient's today that are completed, Skipped
+            tasks left out. Includes tasks assigned to the care team.
+        tasksDue:
+          type: integer
+          description: |
+            Required tasks due on or before the patient's today, Skipped tasks left out.
+            Includes tasks assigned to the care team. Tasks due later are not counted.
 
   securitySchemes:
     apiKeyAuth:

@@ -6,6 +6,29 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 12.1.0 — unreleased
+
+Why 12.1.0: 12.0.0 is already on `main`, and this release adds a tool without changing any existing one. A new tool is a minor change.
+
+Jira: [AIP-605](https://nicoya.atlassian.net/browse/AIP-605).
+
+### Added
+
+- `get_program_progress` (`GET /api/v2/programs/enrollments/progress?userId=`): one patient's active program enrolments, newest start first, each with the program's name, start and end dates, its last day, length in weeks, current week, and tasks done out of tasks due. The last day is the end date when the program has phases, otherwise the due day of its last scheduled task, as the dashboard counts it; the current week is empty after that day. `userId` is required, so the read always covers exactly one patient. An empty list means the patient is not enrolled in an active program. The server counts the tasks (Required tasks due by the patient's today, Skipped tasks left out) and the weeks, on the same rules as the dashboard, and the description tells the agent to copy those numbers rather than work them out from dates. Before this, no tool could read a patient's programs, so the pre-visit brief could not say how far along a patient is. ([AIP-605](https://nicoya.atlassian.net/browse/AIP-605))
+- A `Programs` tag and the `ProgramProgressDto` response schema. ([AIP-605](https://nicoya.atlassian.net/browse/AIP-605))
+
+### Changed
+
+- None.
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None.
+
 ## 12.0.0 — unreleased
 
 Why 12.0.0: 11.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. arii-agents' `mcp/version.mjs` counts any change to a response's shape as major, even an added optional field. So the version is major although nothing breaks.
