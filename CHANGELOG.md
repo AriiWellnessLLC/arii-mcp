@@ -14,7 +14,7 @@ Jira: [AIP-697](https://nicoya.atlassian.net/browse/AIP-697).
 
 ### Added
 
-- `search_product_guide`: searches Nicoya's help pages (`kind=academy`, the default) or Academy course lessons (`kind=course`) for how the app works, best match first. Optional `audience` (`patient` for a patient) and `limit` (1 to 10, 5 by default). Each result has the page's `slug`, `title`, app path, plans, status, videos and a matched excerpt. Backed by `GET /api/v1/content-pages` (arii-api #3612). ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `search_product_guide`: searches Nicoya's help pages (`kind=academy`, the default) or Academy course lessons (`kind=course`) for how the app works, best match first. Optional `audience` (`patient` for a patient) and `limit` (1 to 10, 10 by default). `q` takes English key words only, never a patient's details (they travel in the URL). Each result has the page's `slug`, `kind`, `title`, app path, plans, status, videos and a matched excerpt. Backed by `GET /api/v1/content-pages` (arii-api #3612). ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
 - `get_product_guide_page`: reads one whole page by its `slug`: the steps, app path, plans, status, videos, related pages and the Academy course link. Backed by `GET /api/v1/content-pages/{slug}`. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
 - Both are read-only and hold no patient or clinic data: the same pages serve every clinic.
 

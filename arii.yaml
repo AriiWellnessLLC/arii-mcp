@@ -2602,8 +2602,11 @@ paths:
           in: query
           required: true
           description: |
-            The question or its key words, in the words the app uses: "custom role", "connect
-            Oura", "branding". Stop words are ignored.
+            Key words only, in English and in the words the app uses: "custom role", "connect
+            Oura", "branding". Translate a question asked in another language into English key
+            words first; the guide is in English and search matches English words only. Never
+            put a patient's name, condition or any other personal detail here: the words travel
+            in the URL. Stop words are ignored.
           schema:
             type: string
         - name: kind
@@ -2624,12 +2627,14 @@ paths:
         - name: limit
           in: query
           required: false
-          description: How many results, 1 to 10.
+          description: |
+            How many results, 1 to 10. Send 10: more candidates give a better chance that the
+            right page is among them, and you pick the best one by its title and excerpt.
           schema:
             type: integer
             minimum: 1
             maximum: 10
-            default: 5
+            default: 10
       responses:
         "200":
           description: The matching pages, best first
@@ -4189,6 +4194,10 @@ components:
         slug:
           type: string
           description: The page id. Read the whole page with `get_product_guide_page`.
+        kind:
+          type: string
+          enum: [academy, course]
+          description: "`academy` for a help page, `course` for an Academy course lesson. Pass it to `get_product_guide_page`."
         title:
           type: string
         section:
@@ -4228,6 +4237,10 @@ components:
       properties:
         slug:
           type: string
+        kind:
+          type: string
+          enum: [academy, course]
+          description: "`academy` for a help page, `course` for an Academy course lesson."
         title:
           type: string
         section:
