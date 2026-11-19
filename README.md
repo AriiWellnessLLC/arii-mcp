@@ -12,7 +12,7 @@ The surface is **read-only**. No `create_*` or other write operation is exposed:
 
 Descriptions are written for agent consumption and define the supported workflows for identity resolution, biomarker retrieval, observation queries, medication adherence, and clinical notes.
 
-The specification currently defines **32 operations** across **32 paths** and **37 component schemas**, organised into the following domains:
+The specification currently defines **34 operations** across **34 paths** and **43 component schemas**, organised into the following domains:
 
 | Tag | Scope |
 | --- | --- |
@@ -27,6 +27,7 @@ The specification currently defines **32 operations** across **32 paths** and **
 | `Markers` | Current values, trends and individual readings, from every source the person has, and server-flagged out-of-range lab results |
 | `MarkerTypes` | Biomarker and metric definitions and lookup |
 | `DataDictionary` | Per-user inventory of marker types with recorded data |
+| `ProductGuide` | Nicoya's help pages and Academy course lessons: how the app works, the same for every clinic |
 
 ## Authentication
 

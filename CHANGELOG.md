@@ -6,6 +6,30 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 12.1.0 — unreleased
+
+Why 12.1.0: 12.0.0 is already on `main`, and this release adds two tools. arii-agents' `mcp/version.mjs` counts a new tool as minor.
+
+Jira: [AIP-697](https://nicoya.atlassian.net/browse/AIP-697).
+
+### Added
+
+- `search_product_guide`: searches Nicoya's help pages (`kind=academy`, the default) or Academy course lessons (`kind=course`) for how the app works, best match first. Optional `audience` (`patient` for a patient) and `limit` (1 to 10, 5 by default). Each result has the page's `slug`, `title`, app path, plans, status, videos and a matched excerpt. Backed by `GET /api/v1/content-pages` (arii-api #3612). ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `get_product_guide_page`: reads one whole page by its `slug`: the steps, app path, plans, status, videos, related pages and the Academy course link. Backed by `GET /api/v1/content-pages/{slug}`. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- Both are read-only and hold no patient or clinic data: the same pages serve every clinic.
+
+### Changed
+
+- None.
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None.
+
 ## 12.0.0 — unreleased
 
 Why 12.0.0: 11.0.0 is already on `main`, and this release adds a field to the `get_marker_samples_compact` reading. arii-agents' `mcp/version.mjs` counts any change to a response's shape as major, even an added optional field. So the version is major although nothing breaks.
