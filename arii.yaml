@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "12.0.0"
+  version: "12.1.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -208,6 +208,10 @@ tags:
     description: Marker type (biomarker/metric) definitions and lookup
   - name: DataDictionary
     description: Per-user data dictionary (which marker types a user has data for)
+  - name: ProductGuide
+    description: |
+      Nicoya's help pages and Academy course lessons: how the app works, where things are,
+      and which plans have them. The same for every clinic; never patient data.
 
 paths:
   # ===================
@@ -2555,6 +2559,144 @@ paths:
         "403":
           description: Requester is not permitted to read this user's data dictionary
 
+  # ===================
+  # PRODUCT GUIDE ENDPOINTS
+  # ===================
+  /api/v1/content-pages:
+    get:
+      tags: [ProductGuide]
+      operationId: search_product_guide
+      summary: Search the Nicoya product guide for how the app works
+      description: |
+        Searches Nicoya's own help pages and Academy course lessons and returns the best
+        matches first. The same pages serve every clinic.
+
+        Use for a question about how the Nicoya app works: how to do something, where a
+        setting or screen is, what a feature does, or which plans include it. Never use it
+        for a patient's data or for medical advice; it holds no patient or clinic records.
+
+        Search the help pages first (`kind=academy`, the default): they hold the short
+        answer with the steps. Search `kind=course` for the longer explanation an Academy
+        course lesson gives, or when the help pages have nothing. The two kinds are
+        searched apart, never mixed in one list.
+
+        Pass `audience=patient` when the person asking is a patient, so they get only
+        pages written for patients.
+
+        Each result has its `slug`, `title`, `appPath` (where it is in the app, null when
+        it has no screen), `plans` (empty when every plan has it), `status`, `videos` and
+        an `excerpt` with the matched words in bold. A `status` of `coming-soon` or
+        `planned` means the feature may not be in the person's clinic yet; say so.
+
+        Results always come back when any word matches, so judge relevance from the
+        title and excerpt. An empty list means no page matched any word of the question.
+        Then say the answer is not in the Nicoya guides; do not invent steps.
+
+        Read the best page with `get_product_guide_page` before answering: it holds the
+        full steps and the Academy course link, which search results do not carry.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: |
+            Key words only, in English and in the words the app uses: "custom role", "connect
+            Oura", "branding". Translate a question asked in another language into English key
+            words first; the guide is in English and search matches English words only. Never
+            put a patient's name, condition or any other personal detail here: the words travel
+            in the URL. Stop words are ignored.
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: "`academy` for help pages, `course` for Academy course lessons."
+          schema:
+            type: string
+            enum: [academy, course]
+            default: academy
+        - name: audience
+          in: query
+          required: false
+          description: Only pages written for this audience. Use `patient` for a patient.
+          schema:
+            type: string
+            enum: [admin, provider, care, front, dev, patient]
+        - name: limit
+          in: query
+          required: false
+          description: |
+            How many results, 1 to 10. Send 10: more candidates give a better chance that the
+            right page is among them, and you pick the best one by its title and excerpt.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 10
+      responses:
+        "200":
+          description: The matching pages, best first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductGuideSearchResult"
+        "400":
+          description: "`q` is missing, or `limit`, `kind` or `audience` is not an allowed value"
+
+  /api/v1/content-pages/{slug}:
+    get:
+      tags: [ProductGuide]
+      operationId: get_product_guide_page
+      summary: Read one page of the Nicoya product guide
+      description: |
+        Returns one whole help page or course lesson: its text with the steps, where it is
+        in the app, the plans that have it, its videos, its related pages and, for a help
+        page, the Academy course that teaches it.
+
+        Use after `search_product_guide`, with a `slug` it returned and the same `kind`.
+        Answer from the `body`: give the steps and the `appPath`, name the `plans` when the
+        list is not empty, and say the feature may not be in their clinic yet when
+        `status` is not `live`. Offer the `learn` course and any video that has a `url`. A
+        video with status `planned` has no link yet; do not mention a link for it.
+
+        Links inside `body` are written `(#slug)`: another page of the same kind, which
+        this tool can read.
+
+        A 404 means no page has that slug for that kind.
+      x-mcp-annotations:
+        readOnlyHint: true
+        idempotentHint: true
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The page's `slug` from `search_product_guide`, e.g. `admin-roles`.
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: The `kind` the page was found under.
+          schema:
+            type: string
+            enum: [academy, course]
+            default: academy
+      responses:
+        "200":
+          description: The whole page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductGuidePage"
+        "400":
+          description: "`kind` is not an allowed value"
+        "404":
+          description: No page has that slug for that kind
+
 components:
   parameters:
     # Canonical Arii user-ID parameters. Kept here so the ID-kind guidance has a
@@ -4019,6 +4161,133 @@ components:
         hasNextPage:
           type: boolean
 
+    ProductGuideVideo:
+      type: object
+      description: A video for a product guide page.
+      properties:
+        title:
+          type: string
+        length:
+          type: string
+          nullable: true
+          description: As written, e.g. `1:12` or `~1:30`.
+        url:
+          type: string
+          nullable: true
+          description: The https link. Null while the video is `planned`.
+        status:
+          type: string
+          enum: [live, planned]
+    ProductGuideLink:
+      type: object
+      description: A link to the Academy course that teaches a help page.
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+          description: Absolute https URL.
+    ProductGuideSearchResult:
+      type: object
+      description: One page that matched a `search_product_guide` question.
+      properties:
+        slug:
+          type: string
+          description: The page id. Read the whole page with `get_product_guide_page`.
+        kind:
+          type: string
+          enum: [academy, course]
+          description: "`academy` for a help page, `course` for an Academy course lesson. Pass it to `get_product_guide_page`."
+        title:
+          type: string
+        section:
+          type: string
+          nullable: true
+          description: The help center section, e.g. `admin`, or `course` for a lesson.
+        status:
+          type: string
+          nullable: true
+          enum: [live, coming-soon, planned]
+        appPath:
+          type: string
+          nullable: true
+          description: Where the feature is in the app; null when it has no screen.
+        audience:
+          type: array
+          items:
+            type: string
+        plans:
+          type: array
+          items:
+            type: string
+          description: The plans that have the feature; empty when every plan has it.
+        videos:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductGuideVideo"
+        excerpt:
+          type: string
+          description: The passages that matched, with the matching words in `**bold**`.
+        score:
+          type: number
+          description: Relevance; higher is better. Only comparable within one search.
+    ProductGuidePage:
+      type: object
+      description: One whole product guide page.
+      properties:
+        slug:
+          type: string
+        kind:
+          type: string
+          enum: [academy, course]
+          description: "`academy` for a help page, `course` for an Academy course lesson."
+        title:
+          type: string
+        section:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+          enum: [live, coming-soon, planned]
+        appPath:
+          type: string
+          nullable: true
+        audience:
+          type: array
+          items:
+            type: string
+        body:
+          type: string
+          description: The page text in Markdown. Links to other pages are written `(#slug)`.
+        related:
+          type: array
+          items:
+            type: string
+          description: Slugs of related pages of the same kind.
+        learn:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/ProductGuideLink"
+          nullable: true
+          description: The Academy course that teaches this help page; null when none.
+        videos:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductGuideVideo"
+        plans:
+          type: array
+          items:
+            type: string
+        verifiedOn:
+          type: string
+          format: date
+          nullable: true
+          description: The date the page was last checked against the app.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
     DocumentSearchPassage:
       type: object
       description: One passage of a user's document that matched a `search_user_documents` query.
