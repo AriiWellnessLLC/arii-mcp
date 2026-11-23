@@ -117,11 +117,11 @@ info:
       themselves, not a step before a patient read.
     - Under **API Key**, `requestingUserId` is the only identity the API has, and the older
       reads that take it refuse the call without one (400 on `get_user_symptom_details`).
-      The three compact marker reads
+      The four compact marker reads
       (`get_marker_summary_compact`, `get_marker_averages_compact`,
-      `get_marker_samples_compact`) are **Bearer only**: under API Key they return 401, and
-      `requestingUserId` is deprecated and ignored on them. The "omit it" guidance on those
-      tools is for Bearer/passthrough.
+      `get_marker_samples_compact`, `get_marker_samples_compact_count`) are **Bearer only**:
+      under API Key they return 401, and `requestingUserId` is deprecated and ignored on
+      them. The "omit it" guidance on those tools is for Bearer/passthrough.
     - Airia profile ID to Arii user ID auto-translation exists **only for API Key auth**,
       and some newer endpoints do not support API Key at all.
 
@@ -1800,6 +1800,8 @@ paths:
         Returns a trend for each named marker, one row per marker **and source**, the
         person's preferred source first (AIP-350).
 
+        **Bearer only: under API Key it returns 401.**
+
         **Use this for any trend or "compared to usual" question.** It returns the averages
         with the arithmetic already done: `direction` (`Up`, `Down` or `Flat`, from a
         straight-line fit over every daily value, `Flat` when the change is smaller than the
@@ -1946,6 +1948,8 @@ paths:
         Returns individual readings for the named markers from **every source**, by marker,
         newest first, the preferred source first on the same day (AIP-350).
 
+        **Bearer only: under API Key it returns 401.**
+
         **Use this for "latest", "today", "on the 14th" and any individual reading.**
         - `latestPerSource=true` — only the newest reading per marker per source: "what's
           her latest HRV" from every source in one call. No window needed; with a window, it
@@ -1961,7 +1965,7 @@ paths:
           just outside the normal band is selected as well as one far outside it.
           `rangeSeverity` (printed range) and `appliedRangeSeverity` (applied range) tell
           them apart: `Borderline` or `OutOfRange`.
-        - `valueAbove=X` / `valueBelow=X` — "days her blood pressure was over 140", in the
+        - `valueAbove=X` / `valueBelow=X` — "her blood pressure readings over 140", in the
           reading's unit.
         - `dataSources` — read only these sources.
 
@@ -2124,8 +2128,16 @@ paths:
       description: |
         Returns how many readings `get_marker_samples_compact` returns over all its pages,
         for the same parameters without `cursor` and `limit`. Use it when the question is
-        "how many": "how many glucose readings above 180 this month", "how many days did she
-        log her blood pressure". Never page and count the rows yourself.
+        how many readings: "how many glucose readings above 180 this month", "how many blood
+        pressure readings did she take this week". Never page and count the rows yourself.
+
+        **It counts readings, not days.** It counts the readings from every source, so a
+        morning and an evening cuff reading mirrored through Apple Health count as four. For
+        "how many days did she log her blood pressure", read `readingDays` on the
+        `isPreferredSource` row of `get_marker_averages_compact`. Never add `readingDays`
+        across sources: a day logged by two sources is in both rows.
+
+        **Bearer only: under API Key it returns 401.**
 
         **When `countCapped` is true, say "at least N", where N is `count`.** The count
         stopped early: at 1,000 matches, or, for a count with `select`, `valueAbove` or

@@ -20,7 +20,12 @@ Jira: [AIP-697](https://nicoya.atlassian.net/browse/AIP-697).
 
 ### Changed
 
-- None.
+Descriptions only. The first two bullets restore wording the Airia team corrected by hand in the catalog for 10.0.0; it never reached this file, so 11.0.0, 12.0.0 and 12.1.0 were built without it. The last two apply the same fix to the sibling reads.
+
+- `get_marker_samples_compact_count`: its examples are reading counts. It counts readings from every source, so a day question ("how many days did she log her blood pressure") goes to `readingDays` on the `isPreferredSource` row of `get_marker_averages_compact`, never summed across sources. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `get_marker_samples_compact_count`: "Bearer only: under API Key it returns 401" is in the operation description, and the overview lists all four compact marker reads as Bearer only. It was only on the 401 response, and mcp-link does not show response text to the model (Airia, 2026-11-23). ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `get_marker_averages_compact`, `get_marker_samples_compact`: the same Bearer-only line in the operation description; it too was only on the 401 response. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `get_marker_samples_compact`: the `valueAbove`/`valueBelow` example asks for readings over 140, not days. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
 
 ### Removed
 
