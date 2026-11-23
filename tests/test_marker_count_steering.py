@@ -47,7 +47,9 @@ class ReadingCountIsNotADayCountTest(unittest.TestCase):
         cls.samples = words(find_operation(spec, "get_marker_samples_compact")["description"])
 
     def test_the_count_never_offers_a_day_question_as_its_example(self):
-        self.assertNotIn("how many days did she log her blood pressure\".", self.count)
+        # The examples are the sentence before the reading-versus-day paragraph; no day question may sit there.
+        examples = self.count.split("**It counts readings, not days.**")[0]
+        self.assertNotIn("days", examples)
         self.assertIn('"how many glucose readings above 180 this month", "how many blood pressure readings', self.count)
 
     def test_a_day_question_goes_to_reading_days_on_the_preferred_source_row(self):
