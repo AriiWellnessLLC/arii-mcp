@@ -53,6 +53,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      # awk reads arii.yaml to the end and prints in END. An awk that exits at the version closes the
+      # pipe while git show is still writing the file (well over a pipe's 64 KB); git show then dies of
+      # SIGPIPE, and pipefail fails the step with exit 141 (tests/test_release_workflow.py).
       - name: Resolve the commit and its version
         id: version
         env:
@@ -61,7 +64,7 @@ jobs:
           set -euo pipefail
           SHA=$(git rev-parse --verify --quiet "${REF:-main}^{commit}" || git rev-parse --verify --quiet "origin/${REF:-main}^{commit}" || true)
           [ -n "$SHA" ] || { echo "::error::'$REF' is not a commit in this repository."; exit 1; }
-          VERSION=$(git show "$SHA:arii.yaml" | awk '/^info:/{i=1} i && /^  version:/{gsub(/"/,"",$2); print $2; exit}')
+          VERSION=$(git show "$SHA:arii.yaml" | awk '/^info:/{i=1} i && !v && /^  version:/{gsub(/"/,"",$2); v=$2} END{print v}')
           [ -n "$VERSION" ] || { echo "::error::No info.version in arii.yaml at $SHA."; exit 1; }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -89,7 +92,7 @@ jobs:
           fi
           {
             if [ -n "$SINCE" ]; then
-              OLD=$(git show "$SINCE:arii.yaml" 2>/dev/null | awk '/^info:/{i=1} i && /^  version:/{gsub(/"/,"",$2); print $2; exit}')
+              OLD=$(git show "$SINCE:arii.yaml" 2>/dev/null | awk '/^info:/{i=1} i && !v && /^  version:/{gsub(/"/,"",$2); v=$2} END{print v}')
               echo "arii.yaml ${OLD:-?} → $VERSION. Changes since $SINCE."
               RANGE="$SINCE..$SHA"
             else
