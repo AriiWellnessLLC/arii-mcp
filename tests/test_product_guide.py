@@ -48,6 +48,22 @@ class ProductGuideContractTest(unittest.TestCase):
         self.assertIn("learn", self.schemas["ProductGuidePage"]["properties"])
         self.assertIn("get_product_guide_page", self.search["description"])
 
+    def test_search_says_to_search_both_kinds_every_time(self):
+        # When the lessons were only a fallback, the chat skipped them and missed answers only a lesson has
+        # ("Show filed", TEST CLINIC 37, 2026-11-25), even with a prompt that said to search both.
+        text = " ".join(self.search["description"].split())
+        self.assertIn("Search both kinds for every question", text)
+        self.assertIn("`score` compares results only within one list", text)
+        self.assertNotIn("help pages first", text)
+        self.assertNotIn("when the help pages have nothing", text)
+        # One empty list of the two is not "not in the guides".
+        self.assertIn("When both lists are empty", text)
+        self.assertNotIn("An empty list means", text)
+
+    def test_read_takes_the_kind_of_the_chosen_result(self):
+        # A lesson read as a help page answers 404.
+        self.assertIn("the `kind` that result carries", " ".join(self.read["description"].split()))
+
 
 if __name__ == "__main__":
     unittest.main()

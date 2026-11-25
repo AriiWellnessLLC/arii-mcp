@@ -6,6 +6,17 @@ Releases before 3.1.0 were not run as weekly releases. Their entries group the c
 
 Write the entry in the same PR that raises the version. List the tools added, changed and removed, and any breaking changes. A breaking change is anything that makes a tool call that worked before fail: a removed tool, a removed parameter, a parameter that becomes required, or a narrower limit.
 
+## 12.2.0 — unreleased
+
+Why 12.2.0: 12.1.0 is already on `main`, and this release changes two tool descriptions. arii-agents' `mcp/version.mjs` counts a changed tool description as minor. No tool, parameter or limit changes.
+
+Jira: [AIP-697](https://nicoya.atlassian.net/browse/AIP-697).
+
+### Changed
+
+- `search_product_guide`: search both kinds for every question, help pages (`kind=academy`) and Academy course lessons (`kind=course`), and pick the page about the exact thing asked from both lists; `score` compares results only within one list, and only when both lists are empty is the answer not in the guides. It said to search the help pages first and the lessons only when the help pages had nothing. The AIP-698 chat prompt (chat 5.42.0, not merged yet, arii-agents#95) says to search both, and the agent sometimes followed the tool instead: on TEST CLINIC 37 (nicoya dev, 2026-11-25), "Where do I find documents I've filed away?" skipped the lessons in 3 of 4 runs and missed "Show filed", which only the lesson has. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `get_product_guide_page`: read the page picked with its `slug` and the `kind` that search result carries. "The same `kind`" was ambiguous once both kinds are searched, and reading a lesson as a help page answers 404. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+
 ## 12.1.0 — unreleased
 
 Why 12.1.0: 12.0.0 is already on `main`, and this release adds two tools. arii-agents' `mcp/version.mjs` counts a new tool as minor.
