@@ -12,10 +12,22 @@ Why 12.2.0: 12.1.0 is already on `main`, and this release changes two tool descr
 
 Jira: [AIP-697](https://nicoya.atlassian.net/browse/AIP-697).
 
+### Added
+
+- None.
+
 ### Changed
 
-- `search_product_guide`: search both kinds for every question, help pages (`kind=academy`) and Academy course lessons (`kind=course`), and pick the page about the exact thing asked from both lists; `score` compares results only within one list, and only when both lists are empty is the answer not in the guides. It said to search the help pages first and the lessons only when the help pages had nothing. The AIP-698 chat prompt (chat 5.42.0, not merged yet, arii-agents#95) says to search both, and the agent sometimes followed the tool instead: on TEST CLINIC 37 (nicoya dev, 2026-11-25), "Where do I find documents I've filed away?" skipped the lessons in 3 of 4 runs and missed "Show filed", which only the lesson has. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+- `search_product_guide`: search both kinds for every question, help pages (`kind=academy`) and Academy course lessons (`kind=course`), and pick the page about the exact thing asked from both lists; `score` compares results only within one list, and when nothing in either list is about the exact thing asked (or both are empty) it searches both kinds once more, then says the answer is not in the Nicoya guides and gives no steps, not even a related page's. Each result's fields now name `kind`, and any `status` other than `live` gets the "may not be in your clinic yet" note, as `get_product_guide_page` already said. It said to search the help pages first and the lessons only when the help pages had nothing. The AIP-698 chat prompt (chat 5.42.0, not merged yet, arii-agents#95) says to search both, and the agent sometimes followed the tool instead: on TEST CLINIC 37 (nicoya dev, 2026-11-25), "Where do I find documents I've filed away?" skipped the lessons in 3 of 4 runs and missed "Show filed", which only the lesson has. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
 - `get_product_guide_page`: read the page picked with its `slug` and the `kind` that search result carries. "The same `kind`" was ambiguous once both kinds are searched, and reading a lesson as a help page answers 404. ([AIP-697](https://nicoya.atlassian.net/browse/AIP-697))
+
+### Removed
+
+- None.
+
+### Breaking changes
+
+- None.
 
 ## 12.1.0 — unreleased
 

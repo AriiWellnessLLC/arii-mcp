@@ -2597,18 +2597,20 @@ paths:
         Pass `audience=patient` when the person asking is a patient, so they get only
         pages written for patients.
 
-        Each result has its `slug`, `title`, `appPath` (where it is in the app, null when
+        Each result has its `slug`, `kind`, `title`, `appPath` (where it is in the app, null when
         it has no screen), `plans` (empty when every plan has it), `status`, `videos` and
-        an `excerpt` with the matched words in bold. A `status` of `coming-soon` or
-        `planned` means the feature may not be in the person's clinic yet; say so.
+        an `excerpt` with the matched words in bold. A `status` other than `live` means
+        the feature may not be in the person's clinic yet; say so.
 
-        Results always come back when any word matches, so judge relevance from the
-        title and excerpt. When both lists are empty, no page matched any word of the
-        question. Then say the answer is not in the Nicoya guides; do not invent steps.
+        Results come back when any word matches, so a page that only mentions the topic
+        is no match; judge relevance from the title and excerpt. When nothing in either
+        list is about the exact thing asked, or both lists are empty, search both kinds
+        once more with other product words. If still nothing fits, say the answer is not
+        in the Nicoya guides and give no steps, not even a related page's.
 
         Read the page you picked with `get_product_guide_page`, with its `slug` and `kind`,
-        before answering: it holds the
-        full steps and the Academy course link, which search results do not carry.
+        before answering: it holds the full steps and the Academy course link, which
+        search results do not carry.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true

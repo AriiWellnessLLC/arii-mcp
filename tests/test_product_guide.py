@@ -56,9 +56,13 @@ class ProductGuideContractTest(unittest.TestCase):
         self.assertIn("`score` compares results only within one list", text)
         self.assertNotIn("help pages first", text)
         self.assertNotIn("when the help pages have nothing", text)
-        # One empty list of the two is not "not in the guides".
-        self.assertIn("When both lists are empty", text)
+        # One empty list of the two is not "not in the guides", and a weak match is no match: search again, then
+        # say it is not covered with no steps (QE's made-up feature got another page's steps, run 45531618652).
+        self.assertIn("a page that only mentions the topic is no match", text)
+        self.assertIn("When nothing in either list is about the exact thing asked, or both lists are empty, search both kinds once more", text)
+        self.assertIn("say the answer is not in the Nicoya guides and give no steps, not even a related page's", text)
         self.assertNotIn("An empty list means", text)
+        self.assertIn("Each result has its `slug`, `kind`,", text)
 
     def test_read_takes_the_kind_of_the_chosen_result(self):
         # A lesson read as a help page answers 404.
