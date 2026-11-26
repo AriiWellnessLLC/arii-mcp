@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Arii Health Platform API
-  version: "12.1.0"
+  version: "12.2.0"
   x-mcp-tool-prefix: Arii_MCP
   description: |
     Arii is a health and wellness platform for patient data, clinical notes, observations,
@@ -2587,25 +2587,30 @@ paths:
         setting or screen is, what a feature does, or which plans include it. Never use it
         for a patient's data or for medical advice; it holds no patient or clinic records.
 
-        Search the help pages first (`kind=academy`, the default): they hold the short
-        answer with the steps. Search `kind=course` for the longer explanation an Academy
-        course lesson gives, or when the help pages have nothing. The two kinds are
-        searched apart, never mixed in one list.
+        Search both kinds for every question, with the same key words: `kind=academy` (the
+        default) for the help pages, which hold the short answer with the steps, and
+        `kind=course` for the Academy course lessons, which often hold the detail a help page
+        leaves out (what is coming soon, an exact button, how a feature decides). The two
+        kinds are searched apart, never mixed in one list, and `score` compares results
+        only within one list. Pick the page about the exact thing asked from both lists.
 
         Pass `audience=patient` when the person asking is a patient, so they get only
         pages written for patients.
 
-        Each result has its `slug`, `title`, `appPath` (where it is in the app, null when
+        Each result has its `slug`, `kind`, `title`, `appPath` (where it is in the app, null when
         it has no screen), `plans` (empty when every plan has it), `status`, `videos` and
-        an `excerpt` with the matched words in bold. A `status` of `coming-soon` or
-        `planned` means the feature may not be in the person's clinic yet; say so.
+        an `excerpt` with the matched words in bold. A `status` other than `live` means
+        the feature may not be in the person's clinic yet; say so.
 
-        Results always come back when any word matches, so judge relevance from the
-        title and excerpt. An empty list means no page matched any word of the question.
-        Then say the answer is not in the Nicoya guides; do not invent steps.
+        Results come back when any word matches, so a page that only mentions the topic
+        is no match; judge relevance from the title and excerpt. When nothing in either
+        list is about the exact thing asked, or both lists are empty, search both kinds
+        once more with other product words. If still nothing fits, say the answer is not
+        in the Nicoya guides and give no steps, not even a related page's.
 
-        Read the best page with `get_product_guide_page` before answering: it holds the
-        full steps and the Academy course link, which search results do not carry.
+        Read the page you picked with `get_product_guide_page`, with its `slug` and `kind`,
+        before answering: it holds the full steps and the Academy course link, which
+        search results do not carry.
       x-mcp-annotations:
         readOnlyHint: true
         idempotentHint: true
@@ -2669,7 +2674,8 @@ paths:
         in the app, the plans that have it, its videos, its related pages and, for a help
         page, the Academy course that teaches it.
 
-        Use after `search_product_guide`, with a `slug` it returned and the same `kind`.
+        Use after `search_product_guide`, with a `slug` it returned and the `kind` that
+        result carries.
         Answer from the `body`: give the steps and the `appPath`, name the `plans` when the
         list is not empty, and say the feature may not be in their clinic yet when
         `status` is not `live`. Offer the `learn` course and any video that has a `url`. A

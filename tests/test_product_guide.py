@@ -48,6 +48,26 @@ class ProductGuideContractTest(unittest.TestCase):
         self.assertIn("learn", self.schemas["ProductGuidePage"]["properties"])
         self.assertIn("get_product_guide_page", self.search["description"])
 
+    def test_search_says_to_search_both_kinds_every_time(self):
+        # When the lessons were only a fallback, the chat skipped them and missed answers only a lesson has
+        # ("Show filed", TEST CLINIC 37, 2026-11-25), even with a prompt that said to search both.
+        text = " ".join(self.search["description"].split())
+        self.assertIn("Search both kinds for every question", text)
+        self.assertIn("`score` compares results only within one list", text)
+        self.assertNotIn("help pages first", text)
+        self.assertNotIn("when the help pages have nothing", text)
+        # One empty list of the two is not "not in the guides", and a weak match is no match: search again, then
+        # say it is not covered with no steps (QE's made-up feature got another page's steps, run 45531618652).
+        self.assertIn("a page that only mentions the topic is no match", text)
+        self.assertIn("When nothing in either list is about the exact thing asked, or both lists are empty, search both kinds once more", text)
+        self.assertIn("say the answer is not in the Nicoya guides and give no steps, not even a related page's", text)
+        self.assertNotIn("An empty list means", text)
+        self.assertIn("Each result has its `slug`, `kind`,", text)
+
+    def test_read_takes_the_kind_of_the_chosen_result(self):
+        # A lesson read as a help page answers 404.
+        self.assertIn("the `kind` that result carries", " ".join(self.read["description"].split()))
+
 
 if __name__ == "__main__":
     unittest.main()
